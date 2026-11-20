@@ -1,0 +1,50 @@
+name: AWS OIDC test
+
+# Smoke test for the GitHub Actions → AWS OIDC connection.
+# Assumes the IAM role in AWS_ROLE_ARN and prints the caller identity.
+# No AWS keys are stored anywhere; credentials are short-lived and come from OIDC.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/aws-test.yml
+
+permissions:
+  id-token: write # required to request the OIDC token
+  contents: read
+
+concurrency:
+  group: aws-test-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  verify-oidc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check role ARN is configured
+        env:
+          AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+        run: |
+          if [ -z "$AWS_ROLE_ARN" ]; then
+            echo "::error::Repository variable AWS_ROLE_ARN is not set (Settings → Secrets and variables → Actions → Variables)."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-session-name: gha-aws-test-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Show caller identity
+        run: aws sts get-caller-identity
+
+      - name: Show region
+        run: echo "Authenticated to AWS in $AWS_REGION"
