@@ -29,22 +29,25 @@ jobs:
     steps:
       - name: Check role ARN is configured
         env:
-          AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
         run: |
           if [ -z "$AWS_ROLE_ARN" ]; then
-            echo "::error::Repository variable AWS_ROLE_ARN is not set (Settings → Secrets and variables → Actions → Variables)."
+            echo "::error::Repository secret AWS_ROLE_ARN is not set (Settings → Secrets and variables → Actions → Secrets)."
             exit 1
           fi
 
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           role-session-name: gha-aws-test-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
 
-      - name: Show caller identity
-        run: aws sts get-caller-identity
-
-      - name: Show region
-        run: echo "Authenticated to AWS in $AWS_REGION"
+      # Prints only the role name, never the account ID (this repo's logs are public).
+      - name: Verify assumed role
+        run: |
+          ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+          echo "::add-mask::$ACCOUNT_ID"
+          ROLE_NAME="$(aws sts get-caller-identity --query Arn --output text | cut -d/ -f2)"
+          echo "Authenticated to AWS in $AWS_REGION as role: $ROLE_NAME"
