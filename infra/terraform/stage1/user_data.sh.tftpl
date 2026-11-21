@@ -1,0 +1,52 @@
+#!/bin/bash
+# First-boot setup for the SentinelStream host (Amazon Linux 2023, arm64).
+# Installs Docker and Compose, mounts the data volume. Deploys arrive later via SSM Run Command.
+set -euxo pipefail
+
+COMPOSE_VERSION="v5.8.0"
+COMPOSE_SHA256="1a9c918b2fb49b9c87f0018c64b5abd0d30715155e98dc939779fbaee6c414d3"
+
+dnf install -y docker
+mkdir -p /etc/docker
+cat > /etc/docker/daemon.json <<'JSON'
+{
+  "log-driver": "json-file",
+  "log-opts": { "max-size": "10m", "max-file": "3" }
+}
+JSON
+systemctl enable --now docker
+
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -fsSLo /usr/local/lib/docker/cli-plugins/docker-compose \
+  "https://github.com/docker/compose/releases/download/$${COMPOSE_VERSION}/docker-compose-linux-aarch64"
+echo "$${COMPOSE_SHA256}  /usr/local/lib/docker/cli-plugins/docker-compose" | sha256sum --check --strict
+chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
+docker compose version
+
+# 1 GiB swap as a safety margin on a 2 GiB instance.
+if [ ! -f /swapfile ]; then
+  dd if=/dev/zero of=/swapfile bs=1M count=1024
+  chmod 0600 /swapfile
+  mkswap /swapfile
+  echo '/swapfile none swap defaults 0 0' >> /etc/fstab
+fi
+swapon -a
+
+# The data volume is attached after boot; on Nitro it appears as an NVMe device whose
+# serial is the volume ID without the dash.
+DEVICE="/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${replace(data_volume_id, "-", "")}"
+for _ in $(seq 1 60); do
+  [ -e "$DEVICE" ] && break
+  sleep 5
+done
+[ -e "$DEVICE" ] || { echo "data volume ${data_volume_id} never attached" >&2; exit 1; }
+
+# Format only a blank volume: never wipe existing data.
+if ! blkid "$DEVICE" >/dev/null 2>&1; then
+  mkfs.xfs -L ${project}-data "$DEVICE"
+fi
+mkdir -p ${mount_point}
+UUID="$(blkid -s UUID -o value "$DEVICE")"
+grep -q "$UUID" /etc/fstab || echo "UUID=$UUID ${mount_point} xfs defaults,nofail 0 2" >> /etc/fstab
+mount -a
+mkdir -p ${mount_point}/postgres /opt/${project}
