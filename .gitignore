@@ -1,0 +1,33 @@
+# Secrets: every .env* file is ignored except the placeholder example.
+.env*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Web
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
+npm-debug.log*
+
+# Terraform: state and variable files can hold secrets and account IDs.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+*.tfplan
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.log

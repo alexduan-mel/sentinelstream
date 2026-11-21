@@ -1,0 +1,18 @@
+# Build context allowlist: ignore everything, then add back what the image needs.
+*
+!pyproject.toml
+!uv.lock
+!.python-version
+!api/
+!ingestion/
+!orchestration/
+!alerts/
+!research/
+!filings/
+!ledger/
+!infra/migrations/
+!web/
+web/node_modules/
+web/dist/
+**/__pycache__/
+**/.env*

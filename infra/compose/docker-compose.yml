@@ -1,0 +1,18 @@
+# Base Compose file shared by local development and the EC2 host.
+# Run from the repo root with `docker compose up --build` (compose.yaml includes this file).
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        SENTINELSTREAM_VERSION: ${SENTINELSTREAM_VERSION:-dev}
+    env_file:
+      - path: ../../.env
+        required: false
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    restart: unless-stopped
