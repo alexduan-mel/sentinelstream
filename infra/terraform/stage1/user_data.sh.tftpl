@@ -23,7 +23,7 @@ echo "$${COMPOSE_SHA256}  /usr/local/lib/docker/cli-plugins/docker-compose" | sh
 chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
 docker compose version
 
-# 1 GiB swap as a safety margin on a 2 GiB instance.
+# 1 GiB swap as a safety margin on a 1 GiB instance.
 if [ ! -f /swapfile ]; then
   dd if=/dev/zero of=/swapfile bs=1M count=1024
   chmod 0600 /swapfile

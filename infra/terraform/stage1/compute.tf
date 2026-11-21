@@ -12,7 +12,7 @@ resource "aws_ebs_volume" "data" {
   size              = var.data_volume_gb
   type              = "gp3"
   encrypted         = true
-  tags              = { Name = "${var.project}-data" }
+  tags              = { Name = "${var.project}-data", Snapshot = "daily" }
 
   lifecycle {
     prevent_destroy = true
@@ -58,4 +58,54 @@ resource "aws_volume_attachment" "data" {
   device_name = "/dev/sdf"
   volume_id   = aws_ebs_volume.data.id
   instance_id = aws_instance.app.id
+}
+
+# Daily snapshots of the data volume via Data Lifecycle Manager. Snapshots are incremental,
+# so a week of them costs well under US$1 a month. Covers the database until the nightly
+# pg_dump to S3 exists (M1), and keeps protecting it after.
+resource "aws_iam_role" "dlm" {
+  name = "${var.project}-dlm"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "dlm.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "dlm" {
+  role       = aws_iam_role.dlm.name
+  policy_arn = "arn:${local.partition}:iam::aws:policy/service-role/AWSDataLifecycleManagerServiceRole"
+}
+
+resource "aws_dlm_lifecycle_policy" "data_daily" {
+  description        = "${var.project} data volume daily snapshots"
+  execution_role_arn = aws_iam_role.dlm.arn
+  state              = "ENABLED"
+
+  policy_details {
+    resource_types = ["VOLUME"]
+    target_tags    = { Snapshot = "daily" }
+
+    schedule {
+      name      = "daily-${var.snapshot_retention_days}d"
+      copy_tags = true
+
+      create_rule {
+        interval      = 24
+        interval_unit = "HOURS"
+        times         = ["07:00"] # UTC, overnight in US markets
+      }
+
+      retain_rule {
+        count = var.snapshot_retention_days
+      }
+
+      tags_to_add = { SnapshotCreator = "dlm" }
+    }
+  }
+
+  depends_on = [aws_iam_role_policy_attachment.dlm]
 }

@@ -6,7 +6,7 @@ Everything SentinelStream runs on in AWS (us-east-1). See [ADR 0001](../../docs/
 | --- | --- |
 | `bootstrap/` | S3 bucket for Terraform state (applied once, local state) |
 | `stage1/network.tf` | VPC, one public subnet, internet gateway, a security group with **no inbound rules** |
-| `stage1/compute.tf` | EC2 `t4g.small` (AL2023 arm64, IMDSv2), a separate encrypted EBS volume for Postgres data |
+| `stage1/compute.tf` | EC2 `t4g.micro` (AL2023 arm64, IMDSv2), a separate encrypted EBS volume for Postgres data with 7 daily snapshots |
 | `stage1/iam_instance.tf` | Instance role: SSM, ECR pull, read `/sentinelstream/*` parameters, write its logs, use its bucket |
 | `stage1/github_oidc.tf` | GitHub OIDC provider (imported) and the deploy role, which only `main` can assume |
 | `stage1/ecr.tf` | Image repository with immutable SHA tags; the last 30 images are kept for rollback |
@@ -14,7 +14,9 @@ Everything SentinelStream runs on in AWS (us-east-1). See [ADR 0001](../../docs/
 | `stage1/observability.tf` | Log group (14 days), failed-task-run alarm, SNS email topic |
 | `stage1/budget.tf` | Monthly budget: email at $10 actual, $30 forecast and $30 actual |
 
-Expected cost is about US$19 a month: the instance about $12.30, public IPv4 $3.65, 30 GB of gp3 $2.40, with logs, ECR and S3 under $1.
+Expected cost is about US$12 a month: the instance $6.13, public IPv4 $3.65, 22 GB of gp3 $1.76, and snapshots, logs, ECR and S3 under $1 together.
+
+To give Postgres more memory later, set `instance_type = "t4g.small"` (2 GiB, about US$19 a month in total) and apply. The instance stops and starts in place, and no data is lost.
 
 ## Who applies it
 

@@ -33,15 +33,15 @@ variable "deploy_branch" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type. Must be arm64 (Graviton) to match the image."
+  description = "EC2 instance type. Must be arm64 (Graviton) to match the image. Move up to t4g.small (2 GiB) if memory gets tight."
   type        = string
-  default     = "t4g.small"
+  default     = "t4g.micro"
 }
 
 variable "root_volume_gb" {
   description = "Root EBS volume size: OS, Docker images and container logs."
   type        = number
-  default     = 20
+  default     = 12
 }
 
 variable "data_volume_gb" {
@@ -66,4 +66,10 @@ variable "budget_early_warning_usd" {
   description = "Actual spend that triggers an early warning email."
   type        = number
   default     = 10
+}
+
+variable "snapshot_retention_days" {
+  description = "Daily snapshots of the data volume to keep."
+  type        = number
+  default     = 7
 }
