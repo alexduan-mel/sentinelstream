@@ -31,3 +31,6 @@ crash.log
 .idea/
 .vscode/
 *.log
+
+# Terraform partial backend config (real bucket name)
+backend.hcl
