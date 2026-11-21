@@ -30,6 +30,22 @@ uv run pytest && uv run ruff check . && uv run black --check .
 uvx pre-commit install           # gitleaks, Ruff and Black on every commit
 ```
 
+## Deploy
+
+Every push to `main` that passes CI deploys automatically ([`deploy.yml`](.github/workflows/deploy.yml)):
+
+1. Build the arm64 image natively and push it to ECR, tagged with the full commit SHA.
+2. Send [`infra/deploy/deploy.sh`](infra/deploy/deploy.sh) and the Compose files to the EC2 host with SSM Run Command.
+3. On the host: load secrets from SSM Parameter Store into a tmpfs env file, run `docker compose up --wait`, and require `/healthz` to report the new SHA. If it doesn't, the previous image is started again.
+
+AWS access is OIDC only, with no stored keys. To roll back, run the **Deploy** workflow by hand with an older commit SHA. Its image is still in ECR, so nothing is rebuilt.
+
+```sh
+gh workflow run deploy.yml --ref main -f image_tag=<full-commit-sha>
+```
+
+Infrastructure is in [`infra/terraform`](infra/terraform/README.md).
+
 ## Layout
 
 | Path | Purpose |
