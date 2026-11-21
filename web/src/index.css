@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-bg-primary text-text-primary font-sans text-body;
+}
+
+* {
+  @apply box-border;
+}
+
+a {
+  @apply text-text-primary;
+}
+
+.sentinel-nav-tabs .ant-tabs-nav {
+  margin: 0;
+}
+
+.sentinel-nav-tabs .ant-tabs-tab {
+  padding-block: 14px;
+}
+
+.sentinel-tag {
+  margin-inline-end: 0;
+  font-size: 10px;
+  line-height: 18px;
+}
+
+.sentinel-table-row-selected > td {
+  background: rgba(56, 189, 248, 0.1) !important;
+}
+
+.ant-table-wrapper .ant-table-cell {
+  vertical-align: top;
+}
