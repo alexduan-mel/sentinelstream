@@ -8,11 +8,11 @@ services:
       dockerfile: Dockerfile
       args:
         SENTINELSTREAM_VERSION: ${SENTINELSTREAM_VERSION:-dev}
+    # Settings come only from env files (.env locally, Parameter Store on EC2), so nothing here can
+    # silently override them.
     env_file:
       - path: ../../.env
         required: false
-    environment:
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     restart: unless-stopped
