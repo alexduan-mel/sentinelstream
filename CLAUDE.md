@@ -9,10 +9,10 @@ Read `docs/PRD.md` for the full product spec and milestones. This file is the wo
 Done when every box is ticked:
 
 - [x] Repo skeleton in the target layout below, with `.env.example` and a `.gitignore` that excludes every `.env*` except the example
-- [ ] CI on GitHub Actions: pytest, Vitest, Ruff, Black check, ESLint, and **gitleaks** on every push and PR
+- [x] CI on GitHub Actions: pytest, Vitest, Ruff, Black check, ESLint, and **gitleaks** on every push and PR
 - [ ] Single baseline schema migration (the prototype's 35 migrations collapsed into `001_baseline.sql`), run by the locked migration runner
 - [ ] Core prototype modules carried over and running under Docker Compose: orchestration (scheduler, `task_runs`, locks, dispatch), ingestion (SEC client, Massive bars), migrations runner, minimal web UI with the task-runs view
-- [ ] Terraform for stage-1 AWS (us-east-1): ECR, EC2 t4g.micro, IAM role for GitHub OIDC, SSM (Run Command + Parameter Store), CloudWatch Logs + one alarm, S3 bucket, AWS Budgets alarm
+- [x] Terraform for stage-1 AWS (us-east-1): ECR, EC2 t4g.micro, IAM role for GitHub OIDC, SSM (Run Command + Parameter Store), CloudWatch Logs + one alarm, S3 bucket, AWS Budgets alarm
 - [ ] Deploy job: merge to `main` → build images → push to ECR (tagged by commit SHA) → SSM Run Command pulls and restarts Compose on EC2
 - [ ] README with a one-paragraph pitch, architecture diagram (Mermaid), screenshots, and a "Scope and roadmap" section
 

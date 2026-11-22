@@ -1,0 +1,153 @@
+name: Deploy
+
+# Builds the arm64 image for one commit, pushes it to ECR (tag = full commit SHA), and deploys it to the
+# EC2 host with SSM Run Command. Called by CI after every green push to main; run it by hand with an
+# older SHA to roll back (the existing image is reused, nothing is rebuilt).
+# AWS access is OIDC only, and the deploy role trusts workflows on main only.
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        description: Full commit SHA to build and deploy
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Full commit SHA to deploy (an older SHA rolls back)
+        type: string
+        required: true
+
+permissions:
+  id-token: write # OIDC token for AWS
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false # never interrupt a deploy halfway
+
+env:
+  AWS_REGION: us-east-1
+  PROJECT: sentinelstream
+  IMAGE_TAG: ${{ inputs.image_tag }}
+
+jobs:
+  image:
+    name: Build and push image (arm64)
+    runs-on: ubuntu-24.04-arm # the EC2 host is Graviton, so build natively
+    timeout-minutes: 20
+    steps:
+      - name: Check image tag is a full commit SHA
+        run: |
+          [[ "$IMAGE_TAG" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::image_tag must be a 40-character commit SHA"; exit 1; }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.image_tag }}
+          persist-credentials: false
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: gha-deploy-image-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - name: Log in to ECR
+        run: |
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          echo "::add-mask::$account"
+          registry="${account}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
+          echo "REGISTRY=$registry" >> "$GITHUB_ENV"
+
+      - name: Build and push unless this SHA is already in ECR
+        run: |
+          if aws ecr describe-images --repository-name "$PROJECT" --image-ids "imageTag=$IMAGE_TAG" >/dev/null 2>&1; then
+            echo "Image $IMAGE_TAG already in ECR; reusing it."
+            exit 0
+          fi
+          image="$REGISTRY/$PROJECT:$IMAGE_TAG"
+          docker build --build-arg "SENTINELSTREAM_VERSION=$IMAGE_TAG" --tag "$image" .
+          docker push "$image"
+
+  deploy:
+    name: Deploy to EC2 via SSM
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.image_tag }}
+          persist-credentials: false
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: gha-deploy-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - name: Find the app instance
+        run: |
+          ids="$(aws ec2 describe-instances \
+            --filters "Name=tag:Project,Values=$PROJECT" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[].Instances[].InstanceId' --output text)"
+          count="$(wc -w <<<"$ids")"
+          [[ "$count" -eq 1 ]] || { echo "::error::expected 1 running instance tagged Project=$PROJECT, found $count"; exit 1; }
+          echo "INSTANCE_ID=$ids" >> "$GITHUB_ENV"
+
+      - name: Send deploy command
+        run: |
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          echo "::add-mask::$account"
+          image="${account}.dkr.ecr.${AWS_REGION}.amazonaws.com/$PROJECT:$IMAGE_TAG"
+          b64() { base64 --wrap=0 "$1"; }
+          # The host only needs Docker and the AWS CLI: the Compose files and deploy script travel with the command.
+          params="$(jq -n \
+            --arg base "$(b64 infra/compose/docker-compose.yml)" \
+            --arg prod "$(b64 infra/compose/docker-compose.prod.yml)" \
+            --arg script "$(b64 infra/deploy/deploy.sh)" \
+            --arg image "$image" \
+            --arg region "$AWS_REGION" \
+            --arg dir "/opt/$PROJECT" \
+            '{
+              executionTimeout: ["900"],
+              commands: [
+                "set -euo pipefail",
+                "install -d -m 0755 \($dir)/compose",
+                "echo \($base) | base64 -d > \($dir)/compose/docker-compose.yml",
+                "echo \($prod) | base64 -d > \($dir)/compose/docker-compose.prod.yml",
+                "echo \($script) | base64 -d > \($dir)/deploy.sh",
+                "bash \($dir)/deploy.sh \($image) \($region)"
+              ]
+            }')"
+          command_id="$(aws ssm send-command \
+            --document-name AWS-RunShellScript \
+            --instance-ids "$INSTANCE_ID" \
+            --comment "deploy ${IMAGE_TAG:0:12}" \
+            --parameters "$params" \
+            --query Command.CommandId --output text)"
+          echo "COMMAND_ID=$command_id" >> "$GITHUB_ENV"
+
+      - name: Wait for the deploy to finish
+        run: |
+          status=Pending
+          for _ in $(seq 1 150); do
+            status="$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+              --query Status --output text 2>/dev/null || echo Pending)"
+            case "$status" in
+              Pending|InProgress|Delayed) sleep 5 ;;
+              *) break ;;
+            esac
+          done
+          echo "::group::Host output"
+          aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+            --query '[StandardOutputContent, StandardErrorContent]' --output text || true
+          echo "::endgroup::"
+          echo "SSM command status: $status"
+          [[ "$status" == "Success" ]]

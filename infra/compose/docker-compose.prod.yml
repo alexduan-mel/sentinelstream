@@ -1,0 +1,18 @@
+# Production overrides for the EC2 host. Applied on top of docker-compose.yml by infra/deploy/deploy.sh:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --no-build
+# Images come from ECR (tagged by commit SHA), secrets from SSM Parameter Store, logs go to CloudWatch.
+
+x-cloudwatch-logs: &cloudwatch-logs
+  driver: awslogs
+  options:
+    awslogs-region: ${AWS_REGION:?set by deploy.sh}
+    awslogs-group: /sentinelstream/app
+    tag: "{{.Name}}"
+
+services:
+  api:
+    image: ${SENTINELSTREAM_IMAGE:?set by deploy.sh}
+    env_file:
+      - path: /run/sentinelstream/app.env
+        required: true
+    logging: *cloudwatch-logs
