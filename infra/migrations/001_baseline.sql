@@ -13,11 +13,11 @@
 --   * Every fact table carries known_at (when the fact became public).
 --     Research code reads facts only where known_at < as_of.
 --   * Every ingested row records the task_run_id that wrote it.
---   * Each migration records itself in schema_migrations inside its own
---     transaction; the runner checks that it did.
+--   * Each migration records itself in schema_migrations. The runner
+--     (orchestration/migrations.py) runs each file in one transaction that
+--     it owns and commits only if that row is there, so files contain no
+--     BEGIN or COMMIT. To apply by hand: psql --single-transaction -f FILE.
 -- ============================================================
-
-BEGIN;
 
 CREATE SCHEMA IF NOT EXISTS sentinel_stream;
 SET search_path TO sentinel_stream, public;
@@ -282,5 +282,3 @@ COMMENT ON TABLE filings IS
 -- ------------------------------------------------------------
 INSERT INTO schema_migrations (migration_name, sequence_number, is_baseline)
 VALUES ('001_baseline.sql', 1, TRUE);
-
-COMMIT;

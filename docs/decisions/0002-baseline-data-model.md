@@ -40,7 +40,9 @@ A split rewrites stored price levels, but returns are unchanged. Research works 
 
 **Database.** Plain `postgres:16`, using the `sentinel_stream` schema. `pgcrypto` is not needed on Postgres 13 and later. `btree_gist` waits for Company Context.
 
-**Migrations.** Each file records itself in `schema_migrations` inside its own transaction, and the runner checks this for every file. The prototype only checked files numbered 025 and later.
+**Migrations.** Every file, `001_baseline.sql` included, inserts its own row into `schema_migrations`. The runner (`orchestration/migrations.py`) runs each file in one transaction that it owns, checks that row inside the same transaction, and commits only if it is there with the file's sequence number; otherwise the file is rolled back. So files contain no `BEGIN` or `COMMIT`, and the runner refuses any that do. The prototype only checked files numbered 025 and later, and ran in autocommit, so a failing file could be left half applied.
+
+Every container started from the app image runs the runner first (the image entrypoint), under one Postgres advisory lock held for the whole run. Concurrent starts are safe: the other runners wait, then find nothing pending. A recorded migration with no file on disk is only a warning, so an older image started by a rollback still runs. Forward migrations must therefore stay compatible with the previous release.
 
 ## Consequences
 

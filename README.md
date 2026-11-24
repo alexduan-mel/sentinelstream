@@ -24,7 +24,11 @@ uv run uvicorn api.app:app --reload
 
 ## Checks
 
+The migration tests need a disposable Postgres; without `TEST_DATABASE_URL` they are skipped locally (CI always runs them).
+
 ```sh
+docker run --rm -d --name ss-test-pg -p 127.0.0.1:55432:5432 -e POSTGRES_PASSWORD=test postgres:16
+export TEST_DATABASE_URL=postgresql://postgres:test@127.0.0.1:55432/postgres
 uv run pytest && uv run ruff check . && uv run black --check .
 (cd web && npm test && npm run lint && npm run format:check)
 uvx pre-commit install           # gitleaks, Ruff and Black on every commit
