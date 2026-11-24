@@ -89,7 +89,7 @@ The private prototype (`sentinelstream-prototype`) has working code. **Copy and 
 ## Stack and conventions
 
 - **Backend:** Python 3.11, FastAPI, Pydantic v2, httpx, psycopg2. Tests with pytest; format with Black, lint with Ruff.
-- **Frontend:** React 18, TypeScript, Vite, Ant Design, Tailwind CSS. Tests with Vitest; ESLint and Prettier.
+- **Frontend:** React 18, TypeScript, Vite, Ant Design, Tailwind CSS. Tests with Vitest; ESLint and Prettier. Read `web/DESIGN.md` before any UI work; it overrides the reference screenshots.
 - **Database:** PostgreSQL. Forward-only SQL migrations with a `schema_migrations` ledger, applied under an advisory lock at startup.
 - **Infra:** Terraform, Docker Compose, GitHub Actions.
 - **Commits:** imperative subject line, one logical change per commit.
