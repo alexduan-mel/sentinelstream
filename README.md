@@ -10,9 +10,11 @@ Requires Docker, [uv](https://docs.astral.sh/uv/) and Node 22.
 
 ```sh
 cp .env.example .env
-docker compose up --build        # API and web UI on http://127.0.0.1:8000
+docker compose up --build        # Postgres 16, then the API and web UI on http://127.0.0.1:8000
 curl http://127.0.0.1:8000/healthz
 ```
+
+Every app container applies pending SQL migrations from [`infra/migrations`](infra/migrations) before it starts, under a Postgres advisory lock ([ADR 0002](docs/decisions/0002-baseline-data-model.md)). To run them by hand: `uv run python -m orchestration.migrations` with the `POSTGRES_*` settings exported.
 
 Development without Docker:
 
@@ -24,7 +26,11 @@ uv run uvicorn api.app:app --reload
 
 ## Checks
 
+The migration tests need a disposable Postgres; without `TEST_DATABASE_URL` they are skipped locally (CI always runs them).
+
 ```sh
+docker run --rm -d --name ss-test-pg -p 127.0.0.1:55432:5432 -e POSTGRES_PASSWORD=test postgres:16
+export TEST_DATABASE_URL=postgresql://postgres:test@127.0.0.1:55432/postgres
 uv run pytest && uv run ruff check . && uv run black --check .
 (cd web && npm test && npm run lint && npm run format:check)
 uvx pre-commit install           # gitleaks, Ruff and Black on every commit
@@ -36,7 +42,7 @@ Every push to `main` that passes CI deploys automatically ([`deploy.yml`](.githu
 
 1. Build the arm64 image natively and push it to ECR, tagged with the full commit SHA.
 2. Send [`infra/deploy/deploy.sh`](infra/deploy/deploy.sh) and the Compose files to the EC2 host with SSM Run Command.
-3. On the host: load secrets from SSM Parameter Store into a tmpfs env file, run `docker compose up --wait`, and require `/healthz` to report the new SHA. If it doesn't, the previous image is started again.
+3. On the host: load secrets from SSM Parameter Store into a tmpfs env file, check the EBS data volume is mounted, run `docker compose up --wait` (the api applies pending migrations as it starts), and require `/healthz` to report the new SHA. If it doesn't, the previous image is started again.
 
 AWS access is OIDC only, with no stored keys. To roll back, run the **Deploy** workflow by hand with an older commit SHA. Its image is still in ECR, so nothing is rebuilt.
 

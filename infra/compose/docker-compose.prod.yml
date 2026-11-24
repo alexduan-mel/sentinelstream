@@ -16,3 +16,14 @@ services:
       - path: /run/sentinelstream/app.env
         required: true
     logging: *cloudwatch-logs
+
+  postgres:
+    env_file:
+      - path: /run/sentinelstream/app.env
+        required: true
+    # The separate EBS data volume (ADR 0001), mounted at /srv/sentinelstream by the instance's
+    # user data. It survives instance replacement and is snapshotted daily. deploy.sh refuses to
+    # start if it is not mounted, so Postgres never initialises an empty cluster on the root disk.
+    volumes:
+      - /srv/sentinelstream/postgres:/var/lib/postgresql/data
+    logging: *cloudwatch-logs

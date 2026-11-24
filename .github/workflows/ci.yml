@@ -24,6 +24,19 @@ jobs:
     name: Python (Ruff, Black, pytest)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Disposable database for the migration tests; each test creates and drops its own database.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci-throwaway
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres"
+          --health-interval 2s --health-timeout 3s --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:ci-throwaway@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -118,6 +131,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Create .env from the example
+        run: cp .env.example .env
       - name: Start with docker compose
         env:
           SENTINELSTREAM_VERSION: ${{ github.sha }}
@@ -127,12 +142,18 @@ jobs:
           body="$(curl -fsS http://127.0.0.1:8000/healthz)"
           echo "$body"
           test "$(echo "$body" | jq -r .version)" = "$GITHUB_SHA"
+      - name: Check the baseline migration is recorded
+        run: |
+          applied="$(docker compose exec -T postgres sh -c \
+            'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT migration_name FROM sentinel_stream.schema_migrations"')"
+          echo "$applied"
+          test "$applied" = "001_baseline.sql"
       - name: Show logs on failure
         if: failure()
         run: docker compose logs
       - name: Stop
         if: always()
-        run: docker compose down
+        run: docker compose down --volumes
 
   deploy:
     name: Deploy
