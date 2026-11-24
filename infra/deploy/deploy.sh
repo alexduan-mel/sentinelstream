@@ -5,7 +5,8 @@
 #   deploy.sh <image-uri> <aws-region>      e.g. deploy.sh 1234.dkr.ecr.us-east-1.amazonaws.com/sentinelstream:<sha> us-east-1
 #
 # Steps: ECR login → secrets from Parameter Store → compose pull/up → /healthz must report the new SHA.
-# The api container applies pending migrations at start (image entrypoint), before it reports healthy.
+# Every app container (api, scheduler, worker) applies pending migrations at start (image entrypoint),
+# and `up --wait` requires all of them to report healthy.
 # If the new version fails its health check, the previously deployed image is started again.
 set -euo pipefail
 

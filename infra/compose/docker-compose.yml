@@ -1,25 +1,60 @@
 # Base Compose file shared by local development and the EC2 host.
 # Run from the repo root with `docker compose up --build` (compose.yaml includes this file).
 
+# api, scheduler and worker run the same image (ADR 0001); only the command differs. Locally each
+# service tags its own build of it (one shared tag would make the parallel builds collide); the
+# layers come from one cache. On EC2 the prod file points all three at the same ECR image.
+x-app: &app
+  build:
+    context: ../..
+    dockerfile: Dockerfile
+    args:
+      SENTINELSTREAM_VERSION: ${SENTINELSTREAM_VERSION:-dev}
+  # Settings come only from env files (.env locally, Parameter Store on EC2), so nothing here can
+  # silently override them.
+  env_file:
+    - path: ../../.env
+      required: false
+  # The image entrypoint applies migrations before the command starts, so Postgres must be up first.
+  depends_on:
+    postgres:
+      condition: service_healthy
+  restart: unless-stopped
+
 services:
   api:
-    build:
-      context: ../..
-      dockerfile: Dockerfile
-      args:
-        SENTINELSTREAM_VERSION: ${SENTINELSTREAM_VERSION:-dev}
-    # Settings come only from env files (.env locally, Parameter Store on EC2), so nothing here can
-    # silently override them.
-    env_file:
-      - path: ../../.env
-        required: false
+    <<: *app
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
-    # The image entrypoint applies migrations before the API starts, so Postgres must be up first.
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
+
+  # Enqueues due tasks and reconciles abandoned runs; never runs a task itself (ADR 0003).
+  scheduler:
+    <<: *app
+    command: ["python", "-m", "orchestration.scheduler"]
+    # Healthy while the loop keeps touching its heartbeat file (every SCHEDULER_POLL_SECONDS, 30 s).
+    healthcheck:
+      test: ["CMD", "python", "-m", "orchestration.healthcheck", "--max-age", "120"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      start_interval: 2s
+      retries: 3
+
+  # Claims pending task runs and executes them.
+  worker:
+    <<: *app
+    command: ["python", "-m", "orchestration.worker"]
+    # On `docker stop` the current run may finish first. A run cut off after this is failed by the
+    # scheduler's reconciliation, and the task's next run proceeds as normal.
+    stop_grace_period: 60s
+    # The heartbeat is touched between claims and every 15 s during a run.
+    healthcheck:
+      test: ["CMD", "python", "-m", "orchestration.healthcheck", "--max-age", "60"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      start_interval: 2s
+      retries: 3
 
   postgres:
     image: postgres:16

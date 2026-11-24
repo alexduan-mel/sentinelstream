@@ -52,3 +52,20 @@ def connect_test_db() -> Iterator[Callable[[], Connection]]:
         with admin.cursor() as cursor:
             cursor.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
         admin.close()
+
+
+@pytest.fixture
+def connect_app_db(connect_test_db) -> Callable[[], Connection]:
+    """Like ``connect_test_db``, with the real migrations applied and the app schema on the search path."""
+    from orchestration.migrations import run_migrations
+
+    run_migrations(connect_test_db())
+
+    def connect() -> Connection:
+        conn = connect_test_db()
+        with conn.cursor() as cursor:
+            cursor.execute("SET search_path TO sentinel_stream, public")
+        conn.commit()
+        return conn
+
+    return connect

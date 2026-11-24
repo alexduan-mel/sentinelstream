@@ -180,19 +180,6 @@ def run_migrations(conn: Connection, directory: Path = DEFAULT_DIRECTORY) -> lis
                 cursor.execute("SELECT pg_advisory_unlock(hashtext(%s))", (LOCK_KEY,))
 
 
-def _connect_with_retry(attempts: int, delay_seconds: float) -> Connection:
-    """Connect, retrying while Postgres is still starting. Configuration errors are not retried."""
-    for attempt in range(1, attempts + 1):
-        try:
-            return db.connect()
-        except psycopg2.OperationalError as exc:
-            if attempt == attempts:
-                raise
-            LOGGER.info("database_not_ready attempt=%d/%d error=%s", attempt, attempts, str(exc).strip())
-            time.sleep(delay_seconds)
-    raise AssertionError("unreachable")
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Apply pending SentinelStream SQL migrations.")
     parser.add_argument("--directory", type=Path, default=DEFAULT_DIRECTORY)
@@ -201,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
     try:
-        conn = _connect_with_retry(args.connect_attempts, delay_seconds=2)
+        conn = db.connect_with_retry(attempts=args.connect_attempts, application_name="sentinelstream-migrations")
     except (db.DatabaseConfigurationError, psycopg2.OperationalError) as exc:
         LOGGER.error("migration_runner_failed error=%s", str(exc).strip())
         return 1

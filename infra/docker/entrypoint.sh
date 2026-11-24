@@ -1,6 +1,7 @@
 #!/bin/sh
-# Entrypoint for every container started from the app image (api now; scheduler and worker later).
-# Applies pending migrations under the runner's advisory lock, then runs the container's command.
+# Entrypoint for every container started from the app image (api, scheduler, worker).
+# Applies pending migrations under the runner's advisory lock (concurrent starts apply each file
+# once), then runs the container's command.
 set -eu
 python -m orchestration.migrations
 exec "$@"
