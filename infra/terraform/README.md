@@ -57,8 +57,13 @@ After the first apply:
 
 Secrets live in SSM Parameter Store under `/sentinelstream/`, never in Terraform (state would hold them in plain text). The deploy script reads them into the containers' environment at start.
 
+The deploy refuses to start without the four Postgres settings. Set them once (pick a long random password; it is used when Postgres first initialises its data directory on the EBS volume, so changing it later also needs an `ALTER USER`):
+
 ```sh
-aws ssm put-parameter --name /sentinelstream/POSTGRES_PASSWORD --type SecureString --value '<value>'
+aws ssm put-parameter --name /sentinelstream/POSTGRES_HOST --type String --value postgres
+aws ssm put-parameter --name /sentinelstream/POSTGRES_DB   --type String --value sentinelstream
+aws ssm put-parameter --name /sentinelstream/POSTGRES_USER --type String --value sentinelstream
+aws ssm put-parameter --name /sentinelstream/POSTGRES_PASSWORD --type SecureString --value "$(openssl rand -hex 32)"
 ```
 
 ## Reaching the host and UI

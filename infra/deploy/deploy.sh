@@ -5,6 +5,7 @@
 #   deploy.sh <image-uri> <aws-region>      e.g. deploy.sh 1234.dkr.ecr.us-east-1.amazonaws.com/sentinelstream:<sha> us-east-1
 #
 # Steps: ECR login → secrets from Parameter Store → compose pull/up → /healthz must report the new SHA.
+# The api container applies pending migrations at start (image entrypoint), before it reports healthy.
 # If the new version fails its health check, the previously deployed image is started again.
 set -euo pipefail
 
@@ -17,6 +18,8 @@ ENV_DIR="/run/${PROJECT}"   # tmpfs: secrets never touch the disk
 REGISTRY="${IMAGE%%/*}"
 TAG="${IMAGE##*:}"
 DEPLOYED_FILE="${APP_DIR}/DEPLOYED"
+DATA_DIR="/srv/${PROJECT}"   # EBS data volume (ADR 0001), mounted by the instance's user data
+REQUIRED_SETTINGS=(POSTGRES_HOST POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD)
 
 log() { echo "deploy: $*"; }
 
@@ -41,6 +44,23 @@ load_secrets() {
   )
   mv "${tmp}" "${ENV_DIR}/app.env"
   log "loaded $(wc -l <"${ENV_DIR}/app.env") parameter(s) from /${PROJECT}/"
+
+  local name missing=()
+  for name in "${REQUIRED_SETTINGS[@]}"; do
+    grep -q "^${name}=." "${ENV_DIR}/app.env" || missing+=("${name}")
+  done
+  if ((${#missing[@]})); then
+    log "missing in Parameter Store under /${PROJECT}/: ${missing[*]} (see infra/terraform/README.md)"
+    exit 1
+  fi
+}
+
+check_data_volume() {
+  # Without this, a missing mount would make Postgres initialise an empty cluster on the root disk.
+  if ! mountpoint -q "${DATA_DIR}"; then
+    log "data volume is not mounted at ${DATA_DIR}; refusing to start Postgres"
+    exit 1
+  fi
 }
 
 start() {
@@ -59,6 +79,7 @@ log "deploying ${TAG}"
 aws ecr get-login-password --region "${REGION}" |
   docker login --username AWS --password-stdin "${REGISTRY}" >/dev/null
 load_secrets
+check_data_volume
 
 previous=""
 [[ -f "${DEPLOYED_FILE}" ]] && previous="$(cat "${DEPLOYED_FILE}")"

@@ -11,6 +11,7 @@
 !filings/
 !ledger/
 !infra/migrations/
+!infra/docker/
 !web/
 web/node_modules/
 web/dist/
