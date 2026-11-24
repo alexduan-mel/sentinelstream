@@ -4,18 +4,17 @@ Status: accepted, 24 Nov 2026
 
 ## Context
 
-The prototype has 35 migrations and 29 tables. All 35 apply cleanly to an empty Postgres 16, but the resulting schema has four problems for this repo:
+The prototype has 35 migrations and 29 tables. All 35 apply cleanly to an empty Postgres 16, but the resulting schema has three problems for this repo:
 
-- **Facts are keyed by symbol text, with `ON DELETE CASCADE`.** Deleting a ticker deletes its price history, and a reused ticker merges two companies' data. This is not hypothetical: the prototype seeds `SPCX` as the SPAC and New Issue ETF, while SpaceX has listed under `SPCX` since 12 Jun 2026.
+- **Facts are keyed by symbol text, with `ON DELETE CASCADE`.** Deleting a ticker deletes its price history.
 - **No fact table has `known_at`**, so ground rule 2 (point-in-time correctness) cannot be enforced.
-- **Bars store `adjusted_close`**, which is rewritten after every split. A backtest run before and after a split sees different history.
-- **There is no filings table.** The prototype's SEC client only fetches the latest annual report for Company Context; M1 needs filings stored by accession number.
+- **There is no filings table.** The prototype's SEC client only fetches the latest annual report for Company Context. M1 needs filings stored by accession number.
 
 The prototype also runs on the TimescaleDB image but creates no hypertables.
 
 ## Decision
 
-**Scope.** `001_baseline.sql` contains only what M0 and M1 use: `schema_migrations`, `app_users`, `instruments`, `task_definitions`, `task_runs`, `price_bars` and a new `filings` table. Other carry-over tables arrive as forward migrations when their code is carried over, each rewritten to these rules:
+**Scope.** `001_baseline.sql` contains only what M0 and M1 use: `schema_migrations`, `app_users`, `instruments`, `task_definitions`, `task_runs`, `price_bars`, and a new `filings` table. Other carry-over tables arrive as forward migrations when their code is carried over, and each is rewritten to the rules below:
 
 | Later forward migration | Tables |
 | --- | --- |
@@ -24,27 +23,28 @@ The prototype also runs on the TimescaleDB image but creates no hypertables.
 | Outcome evaluation (M2) | `outcomes`, `scored_signals` |
 | Company Context | `context_entities`, `company_exposures`, `entity_relationships` |
 
-Left in the prototype: `analysis_jobs`, `market_briefs`, `holdings`, `topics`, `topic_entities`, `ticker_tags`, `events`, `event_mentions`, `event_analyses`, `event_impacts`, `event_strength_history`, `divergence_signals`, `price_quotes`.
+These tables stay in the prototype: `analysis_jobs`, `market_briefs`, `holdings`, `topics`, `topic_entities`, `ticker_tags`, `events`, `event_mentions`, `event_analyses`, `event_impacts`, `event_strength_history`, `divergence_signals`, `price_quotes`.
 
-**Identity.** `instruments` replaces `tickers`. Facts reference `instrument_id` with `ON DELETE RESTRICT`. A symbol is unique among active instruments only, so a reused ticker becomes a new row and the old one stays inactive with its history. `cik` is indexed but not unique, because share classes share a CIK. CIK, filer type and listing date are filled by the onboarding job, and an equity cannot reach `ready` without them. A ticker-change history table is deferred until a watchlist ticker actually changes.
+**Identity.** `instruments` replaces `tickers`. Facts reference `instrument_id` with `ON DELETE RESTRICT`. `symbol` is unique. We only track currently listed instruments, so ticker reuse and ticker changes are out of scope; if one happens, rename the old row's symbol by hand. `cik` is indexed but not unique, because share classes of one issuer share a CIK. The onboarding job fills in CIK and filer type, and an equity cannot reach `ready` without them.
 
 **Time.** Every fact table has `known_at`, and research reads only rows with `known_at < as_of`.
 
 - `price_bars.known_at` is generated as 16:00 New York time on the trading date. This is conservative on 13:00 half-days.
-- `filings.known_at` is set to EDGAR's acceptance time. `first_seen_at`, the time our poller first saw the filing, is stored separately. Polling latency must not leak into research timing, and backfilled and live filings must mean the same thing. `is_backfill` marks rows that the poller never saw live.
+- `filings.known_at` is EDGAR's acceptance time, the same for live and backfilled rows. `first_seen_at` stores when our poller saw the filing and is used to measure alert latency. `is_backfill` marks rows loaded by onboarding, which must never trigger alerts.
 
-**Prices.** Bars are stored unadjusted. Split and dividend adjustment will be derived from a corporate-actions table (M2), so stored history never changes.
+**Splits.** Bars are stored split-adjusted, exactly as Massive returns them with `adjusted=true`. After a new split, the instrument's whole history is re-fetched and overwritten, which is cheap for daily bars. Split detection is added in M2: a daily check of Massive's splits endpoint triggers the re-fetch. Until then, the guard against a missed split is a data-quality rule. Any daily move above 40% with no recorded split is marked `suspect`.
+
+A split rewrites stored price levels, but returns are unchanged. Research works on returns, so this does not affect event studies.
 
 **Lineage.** Ingested rows carry `task_run_id`. Raw filing documents go to S3, and the row keeps `raw_s3_key` and `raw_sha256`.
 
-**Database.** Plain `postgres:16`, in the `sentinel_stream` schema. `pgcrypto` is not needed on Postgres 13 and later. `btree_gist` waits for Company Context.
+**Database.** Plain `postgres:16`, using the `sentinel_stream` schema. `pgcrypto` is not needed on Postgres 13 and later. `btree_gist` waits for Company Context.
 
-**Migrations.** Each file records itself in `schema_migrations` inside its own transaction, and the runner checks this for every file. The prototype checked only files from 025 onwards.
+**Migrations.** Each file records itself in `schema_migrations` inside its own transaction, and the runner checks this for every file. The prototype only checked files numbered 025 and later.
 
 ## Consequences
 
 - Carried-over code that queries by symbol must join through `instruments`. This applies to the price-bars worker, the bars API and the task-runs view.
-- The Massive client must request unadjusted bars. The prototype sends `adjusted=true`.
 - The `filings` ingestion is new code, not a carry-over. Before trusting `accepted_at`, check the time zone of EDGAR's `acceptanceDateTime` against a filing index page.
-- Prototype data is not imported now. The prototype database is archived to S3. If it is imported later, its `SPCX` rows belong to the ETF, not SpaceX, and backfilled news has no real `first_seen_at`.
+- Prototype data is not imported now. The prototype database is archived to S3. If it is imported later, note that its `SPCX` rows belong to the SPAC and New Issue ETF, not SpaceX, and that backfilled news has no real `first_seen_at`.
 - Both seeded tasks start as `manual`. Switch them to `automatic` once the provider credentials are in Parameter Store.

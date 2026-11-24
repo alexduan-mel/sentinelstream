@@ -73,7 +73,7 @@ COMMENT ON TABLE app_users IS
 -- ------------------------------------------------------------
 CREATE TABLE instruments (
   id                BIGSERIAL PRIMARY KEY,
-  symbol            TEXT NOT NULL,
+  symbol            TEXT NOT NULL UNIQUE,
   name              TEXT,
   exchange          TEXT,
   asset_type        TEXT NOT NULL,
@@ -82,7 +82,6 @@ CREATE TABLE instruments (
   filer_type        TEXT,
   onboarding_status TEXT NOT NULL DEFAULT 'pending',
   onboarding_error  TEXT,
-  listed_on         DATE,
   active            BOOLEAN NOT NULL DEFAULT TRUE,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -101,18 +100,13 @@ CREATE TABLE instruments (
            OR (cik IS NOT NULL AND filer_type IS NOT NULL))
 );
 
--- Symbols are unique among active instruments only, so a reused ticker
--- (SPCX was an ETF before SpaceX listed under it on 12 Jun 2026) becomes a
--- new instrument while the old one is kept inactive with its history.
-CREATE UNIQUE INDEX uq_instruments_active_symbol ON instruments (symbol) WHERE active;
-
 -- CIK is not unique: share classes of one issuer (GOOGL, GOOG) share a CIK.
 CREATE INDEX idx_instruments_cik ON instruments (cik) WHERE cik IS NOT NULL;
 
 COMMENT ON TABLE instruments IS
   'Instrument registry. Facts reference instruments.id. CIK and filer type are filled by the onboarding job, not by hand.';
 
--- Seed: identities (name, CIK, filer type, listing date) are left to the
+-- Seed: identities (name, CIK, filer type) are left to the
 -- onboarding job, which resolves them from SEC data.
 INSERT INTO instruments (symbol, asset_type, role) VALUES
   ('NVDA',  'equity', 'watchlist'),
@@ -168,7 +162,7 @@ INSERT INTO task_definitions
    trigger_mode, schedule_type, interval_minutes, scheduled_time, schedule_timezone, schedule_days)
 VALUES
   ('ingest_prices', 'Ingest daily price bars', 'ingest_prices', 'price_bars_worker',
-   'Fetch unadjusted daily bars from Massive for active instruments.',
+   'Fetch split-adjusted daily bars from Massive for active instruments.',
    'Weekdays after the US close', '/api/tasks/ingest_prices/run',
    'manual', 'daily_time', NULL, '18:30', 'America/New_York', 'weekdays'),
   ('ingest_sec_filings', 'Ingest SEC filings', 'ingest_sec_filings', 'sec_filings_worker',
@@ -224,8 +218,8 @@ CREATE TABLE price_bars (
   close         NUMERIC(18, 6),
   volume        BIGINT,
   provider      TEXT NOT NULL,
-  -- Bars are stored unadjusted. Split and dividend adjustment is derived
-  -- later from a corporate-actions table, so history never gets rewritten.
+  -- Bars are split-adjusted as Massive returns them (adjusted=true). After a
+  -- new split the instrument's whole history is re-fetched and overwritten.
   -- A bar is public at the regular close. 16:00 New York time is used for
   -- every session, which is conservative on 13:00 half-days.
   known_at      TIMESTAMPTZ NOT NULL
@@ -243,7 +237,7 @@ CREATE TABLE price_bars (
 CREATE INDEX idx_price_bars_instrument_date ON price_bars (instrument_id, trading_date DESC);
 
 COMMENT ON TABLE price_bars IS
-  'Unadjusted daily bars. Upsert key: instrument_id + trading_date + provider.';
+  'Split-adjusted daily bars, re-fetched in full after a split. Upsert key: instrument_id + trading_date + provider. A large move with no recorded split is marked suspect.';
 
 -- ------------------------------------------------------------
 -- SEC filings (new; the prototype never stored filings)
