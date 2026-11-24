@@ -9,13 +9,18 @@ x-cloudwatch-logs: &cloudwatch-logs
     awslogs-group: /sentinelstream/app
     tag: "{{.Name}}"
 
+# api, scheduler and worker: the same ECR image and settings.
+x-app: &app
+  image: ${SENTINELSTREAM_IMAGE:?set by deploy.sh}
+  env_file:
+    - path: /run/sentinelstream/app.env
+      required: true
+  logging: *cloudwatch-logs
+
 services:
-  api:
-    image: ${SENTINELSTREAM_IMAGE:?set by deploy.sh}
-    env_file:
-      - path: /run/sentinelstream/app.env
-        required: true
-    logging: *cloudwatch-logs
+  api: *app
+  scheduler: *app
+  worker: *app
 
   postgres:
     env_file:
