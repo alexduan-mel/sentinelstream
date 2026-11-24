@@ -41,9 +41,10 @@ for _ in $(seq 1 60); do
 done
 [ -e "$DEVICE" ] || { echo "data volume ${data_volume_id} never attached" >&2; exit 1; }
 
-# Format only a blank volume: never wipe existing data.
+# Format only a blank volume: never wipe existing data. XFS labels are at most 12 characters
+# (a longer one makes mkfs.xfs fail); fstab mounts by UUID, so the label is only for people.
 if ! blkid "$DEVICE" >/dev/null 2>&1; then
-  mkfs.xfs -L ${project}-data "$DEVICE"
+  mkfs.xfs -L ss-data "$DEVICE"
 fi
 mkdir -p ${mount_point}
 UUID="$(blkid -s UUID -o value "$DEVICE")"
