@@ -57,16 +57,67 @@ def _exists(conn, relation: str) -> bool:
 # --- Against Postgres ----------------------------------------------------------------------------
 
 
-def test_baseline_applies_once(connect_test_db) -> None:
+def test_baseline_applies_once(connect_test_db, migrations_dir: Path) -> None:
     conn = connect_test_db()
 
-    assert run_migrations(conn) == ["001_baseline.sql"]
+    assert run_migrations(conn, migrations_dir) == ["001_baseline.sql"]
     assert _ledger(conn) == [("001_baseline.sql", 1)]
     for table in ("app_users", "instruments", "task_definitions", "task_runs", "price_bars", "filings"):
         assert _exists(conn, f"sentinel_stream.{table}"), table
 
-    assert run_migrations(conn) == []
+    assert run_migrations(conn, migrations_dir) == []
     assert _ledger(conn) == [("001_baseline.sql", 1)]
+
+
+def test_repo_migrations_apply_in_order(connect_test_db) -> None:
+    conn = connect_test_db()
+
+    applied = run_migrations(conn)
+
+    assert applied == [m.name for m in discover_migrations(DEFAULT_DIRECTORY)]
+    assert [sequence for _, sequence in _ledger(conn)] == list(range(1, len(applied) + 1))
+    assert run_migrations(conn) == []
+
+
+def test_002_reads_stored_acceptance_digits_as_utc(connect_test_db, migrations_dir: Path) -> None:
+    """Rows written under the old reading (digits taken as New York time) move to the true UTC instant."""
+    conn = connect_test_db()
+    run_migrations(conn, migrations_dir)
+    # (accession, digits SEC sent, how 001-era code stored them, the true instant)
+    cases = [
+        # Winter: the AMZN Form 4 EDGAR shows as accepted 18:46:00 ET.
+        ("0001018724-26-000001", "2026-11-24 23:46:00", "2026-11-24 23:46:00-05", "2026-11-24 18:46:00-05"),
+        # Summer: 20:30Z is 16:30 EDT.
+        ("0001018724-26-000002", "2026-04-30 20:30:00", "2026-04-30 20:30:00-04", "2026-04-30 16:30:00-04"),
+        # The repeated hour on 1 Nov 2026, which the old code stored with fold=1 (EST).
+        ("0001018724-26-000003", "2026-11-01 01:30:00", "2026-11-01 01:30:00-05", "2026-10-31 21:30:00-04"),
+    ]
+    with conn.cursor() as cursor:
+        for accession, _digits, stored, _true in cases:
+            cursor.execute(
+                """
+                INSERT INTO sentinel_stream.filings (accession_no, cik, form_type, filed_date, accepted_at, known_at)
+                VALUES (%s, '0001018724', '4', '2026-01-01', %s, %s)
+                """,
+                (accession, stored, stored),
+            )
+    conn.commit()
+
+    shutil.copy(DEFAULT_DIRECTORY / "002_acceptance_times_utc.sql", migrations_dir)
+    assert run_migrations(conn, migrations_dir) == ["002_acceptance_times_utc.sql"]
+
+    with conn.cursor() as cursor:
+        for accession, digits, _stored, true in cases:
+            cursor.execute(
+                """
+                SELECT accepted_at = %s::timestamptz, known_at = %s::timestamptz,
+                       to_char(accepted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')
+                FROM sentinel_stream.filings WHERE accession_no = %s
+                """,
+                (true, true, accession),
+            )
+            assert cursor.fetchone() == (True, True, digits), accession
+    conn.rollback()
 
 
 def test_skips_applied_files(connect_test_db, migrations_dir: Path) -> None:

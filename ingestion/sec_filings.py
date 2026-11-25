@@ -8,8 +8,9 @@ New in this repo (the prototype never stored filings). Each run:
 2. Fetches each issuer's submissions record once (share classes share a CIK) and upserts the recent
    filings by accession number, so reruns only add what is new.
 
-``known_at`` is EDGAR's acceptance time (ADR 0004). An issuer's first poll records its existing
-filings with ``is_backfill = TRUE``, so alerting (M1) can tell history from news.
+``known_at`` is EDGAR's acceptance time, which the submissions API gives in UTC (ADR 0006). An
+issuer's first poll records its existing filings with ``is_backfill = TRUE``, so alerting (M1) can
+tell history from news.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
 from psycopg2.extensions import connection as Connection
@@ -32,8 +33,11 @@ LOGGER = logging.getLogger(__name__)
 
 TASK_ID = "ingest_sec_filings"
 _ACCESSION = re.compile(r"^[0-9]{10}-[0-9]{2}-[0-9]{6}$")
-# A parsed acceptance time this far past the fetch means the time zone reading is wrong (ADR 0004).
+# Tripwires for a wrong time zone reading (ADR 0006): an acceptance time this far past the fetch, or
+# outside EDGAR's filing hours (06:00 to 22:00 Eastern) by more than the slack.
 _FUTURE_TOLERANCE = timedelta(minutes=5)
+_EDGAR_OPENS = time(5, 45)
+_EDGAR_CLOSES = time(22, 15)
 
 
 @dataclass(frozen=True)
@@ -52,19 +56,22 @@ class FilingRecord:
 def parse_acceptance(value: str) -> datetime:
     """EDGAR's ``acceptanceDateTime`` as an aware datetime.
 
-    The submissions API writes New York wall-clock time with a misleading ``Z`` suffix: a 10-K
-    accepted at 18:08 shows as ``...T18:08:27.000Z`` and gets the next day's filing date, because
-    filings accepted after 17:30 Eastern are dated the next business day. Reading it as UTC would put
-    ``known_at`` four or five hours early, which is lookahead. An explicit numeric offset is trusted.
+    The submissions API writes UTC with a ``Z`` suffix: a Form 4 shown on its EDGAR index page as
+    accepted at 18:46:00 Eastern appears as ``...T23:46:00.000Z`` (ADR 0006). The suffix and any
+    numeric offset are taken as written. A value with no zone at all is read as Eastern wall-clock
+    time, the zone EDGAR's own pages use.
     """
-    text = value.strip()
-    if text.endswith("Z"):
-        text = text[:-1]
-    parsed = datetime.fromisoformat(text)
+    parsed = datetime.fromisoformat(value.strip())
     if parsed.tzinfo is not None:
         return parsed
     # fold=1: in the repeated hour at the end of daylight time, take the later instant.
     return parsed.replace(tzinfo=NEW_YORK, fold=1)
+
+
+def outside_edgar_hours(accepted_at: datetime) -> bool:
+    """True if a parsed acceptance time falls outside EDGAR's filing hours, with 15 minutes' slack."""
+    local = accepted_at.astimezone(NEW_YORK).time()
+    return local < _EDGAR_OPENS or local > _EDGAR_CLOSES
 
 
 def _optional_date(value: Any) -> date | None:
@@ -211,7 +218,7 @@ def ingest_sec_filings(run: TaskRun, conn: Connection, *, sec: SecClient | None 
     client = sec or SecClient.from_env()
     attempted = failed = 0
     fetched = inserted = 0
-    future_acceptance = 0
+    future_acceptance = off_hours = 0
     try:
         # 1. Identity for symbols without a CIK.
         submissions_by_cik: dict[str, dict[str, Any]] = {}
@@ -268,6 +275,10 @@ def ingest_sec_filings(run: TaskRun, conn: Connection, *, sec: SecClient | None 
             if early:
                 future_acceptance += len(early)
                 LOGGER.warning("sec_acceptance_in_future cik=%s count=%d", cik, len(early))
+            late_night = [r for r in records if outside_edgar_hours(r.accepted_at)]
+            if late_night:
+                off_hours += len(late_night)
+                LOGGER.warning("sec_acceptance_outside_edgar_hours cik=%s count=%d", cik, len(late_night))
             is_backfill = run.run_mode == "backfill" or not _has_filings(conn, cik)
             new = upsert_filings(conn, records, is_backfill=is_backfill, task_run_id=run.id)
             fetched += len(records)
@@ -280,6 +291,8 @@ def ingest_sec_filings(run: TaskRun, conn: Connection, *, sec: SecClient | None 
 
     if future_acceptance:
         meta["future_acceptance"] = future_acceptance
+    if off_hours:
+        meta["acceptance_outside_edgar_hours"] = off_hours
     if failed == 0:
         status = "succeeded"
     elif failed < attempted:
