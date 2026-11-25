@@ -142,12 +142,13 @@ jobs:
           body="$(curl -fsS http://127.0.0.1:8000/healthz)"
           echo "$body"
           test "$(echo "$body" | jq -r .version)" = "$GITHUB_SHA"
-      - name: Check the baseline migration is recorded
+      - name: Check every migration is recorded
         run: |
           applied="$(docker compose exec -T postgres sh -c \
-            'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT migration_name FROM sentinel_stream.schema_migrations"')"
+            'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT migration_name FROM sentinel_stream.schema_migrations ORDER BY sequence_number"')"
+          expected="$(cd infra/migrations && ls -1 [0-9][0-9][0-9]_*.sql | sort)"
           echo "$applied"
-          test "$applied" = "001_baseline.sql"
+          test "$applied" = "$expected"
       - name: Show logs on failure
         if: failure()
         run: docker compose logs
