@@ -8,11 +8,29 @@ from pathlib import Path
 from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import Scope
 
 from api import auth, tasks
 from api.db import Connect, default_connect
 
 DEFAULT_WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
+
+
+class SinglePageApp(StaticFiles):
+    """Static files, with ``index.html`` for client-side routes such as ``/tasks``.
+
+    Only extensionless paths outside ``/api`` fall back, so a missing asset or API route stays a 404.
+    """
+
+    async def get_response(self, path: str, scope: Scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            first, _, _ = path.partition("/")
+            if exc.status_code != 404 or first == "api" or "." in Path(path).name:
+                raise
+            return await super().get_response("index.html", scope)
 
 
 class Health(BaseModel):
@@ -53,7 +71,7 @@ def create_app(
 
     # Mounted last so API routes always win over static files.
     if resolved_web_dist.is_dir():
-        app.mount("/", StaticFiles(directory=resolved_web_dist, html=True), name="web")
+        app.mount("/", SinglePageApp(directory=resolved_web_dist, html=True), name="web")
 
     return app
 
