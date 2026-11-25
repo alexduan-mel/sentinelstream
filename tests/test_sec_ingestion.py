@@ -37,6 +37,7 @@ def _filing(accession: str, form: str, accepted: str, *, filed: str, items: str 
 
 
 def _submissions(name: str, tickers: list[str], filings: list[dict], *, entity_type: str = "operating") -> dict:
+    # Real records carry entityType; resolution ignores it (see test_a_new_issuer_labelled_other_resolves).
     recent = {key: [f[key] for f in filings] for key in _filing("0000000000-00-000000", "x", "", filed="").keys()}
     return {"name": name, "tickers": tickers, "entityType": entity_type, "filings": {"recent": recent}}
 
@@ -69,7 +70,12 @@ class FakeSec:
             "/files/company_tickers_exchange.json": TICKER_MAP,
             f"/submissions/CIK{NVDA_CIK}.json": _submissions("NVIDIA CORP", ["NVDA"], NVDA_FILINGS),
             f"/submissions/CIK{NBIS_CIK}.json": _submissions("Nebius Group N.V.", ["NBIS"], NBIS_FILINGS),
-            "/submissions/CIK0009999999.json": _submissions("Example Fund Trust", ["ANT"], [], entity_type="other"),
+            "/submissions/CIK0009999999.json": _submissions(
+                "Example Fund Trust",
+                ["ANT"],
+                [_filing("0009999999-26-000001", "485BPOS", "2026-10-01T09:00:00.000Z", filed="2026-10-01")],
+                entity_type="other",
+            ),
         }
         self.requests: list[httpx.Request] = []
 
@@ -176,6 +182,8 @@ def test_normalise_rejects_ragged_columns() -> None:
         (["8-K", "10-K", "6-K", "20-F"], "domestic"),
         (["6-K", "424B4", "F-1"], "foreign_private"),
         (["S-1/A", "S-1"], "domestic"),
+        # A fresh IPO: the S-1 has dropped out of view behind insider filings.
+        (["4", "4", "424B4", "FWP", "S-8", "EFFECT", "3"], "domestic"),
         (["SC 13G"], None),
     ],
 )
@@ -197,8 +205,25 @@ def test_resolve_issuer_confirms_against_submissions() -> None:
         assert submissions["name"] == "Nebius Group N.V."
         with pytest.raises(IdentityError, match="not in SEC's ticker map"):
             resolve_issuer("SPCX", rows, client)
-        with pytest.raises(IdentityError, match="not an operating company"):
+        with pytest.raises(IdentityError, match="files as a fund"):
             resolve_issuer("ANT", rows, client)
+
+
+def test_a_new_issuer_labelled_other_resolves() -> None:
+    # Shaped like a company that listed days ago: SEC labels it entityType "other" (fictional CIK).
+    fake = FakeSec()
+    forms = [("4", "2026-11-23"), ("424B4", "2026-11-19"), ("S-8", "2026-11-19"), ("3", "2026-11-18")]
+    filings = [
+        _filing(f"0001234568-26-00000{n}", form, f"{day}T17:00:00.000Z", filed=day)
+        for n, (form, day) in enumerate(forms)
+    ]
+    fake.routes["/submissions/CIK0001234568.json"] = _submissions(
+        "Example Software, PBC", ["EXSW"], filings, entity_type="other"
+    )
+    rows = [{"cik": 1234568, "name": "Example Software, PBC", "ticker": "EXSW", "exchange": "Nasdaq"}]
+    with fake.client() as client:
+        issuer, _ = resolve_issuer("EXSW", rows, client)
+    assert (issuer.cik, issuer.filer_type) == ("0001234568", "domestic")
 
 
 # --- handler against Postgres ----------------------------------------------------------------------
@@ -256,7 +281,7 @@ def test_first_poll_resolves_identities_and_records_history_as_backfill(connect_
     assert (result.fetched_count, result.inserted_count, result.deduped_count) == (5, 5, 0)
     assert {r["symbol"] for r in result.meta["resolved"]} == {"NVDA", "NBIS"}
     assert {u["symbol"] for u in result.meta["unresolved"]} == {"AMZN", "ANT", "GOOGL", "SPCX"}
-    assert "not an operating company" in result.error_message
+    assert "files as a fund (485BPOS)" in result.error_message
 
     assert _instrument(conn, "NVDA") == (NVDA_CIK, "NVIDIA CORP", "Nasdaq", "domestic", "pending", None)
     assert _instrument(conn, "NBIS")[3] == "foreign_private"

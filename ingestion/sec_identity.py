@@ -18,11 +18,35 @@ _FILER_TYPE_BY_FORM: tuple[dict[str, str], ...] = (
     {"10-K": "domestic", "10-KT": "domestic", "10-Q": "domestic", "20-F": "foreign_private", "40-F": "foreign_private"},
     {"8-K": "domestic", "6-K": "foreign_private"},
     {"S-1": "domestic", "10-12B": "domestic", "F-1": "foreign_private", "20FR12B": "foreign_private"},
+    # Section 16 insider reports: foreign private issuers are exempt, so these mean domestic. This
+    # classifies a fresh IPO whose S-1 has already dropped behind a burst of Form 3 and 4 filings.
+    {"3": "domestic", "4": "domestic", "5": "domestic"},
+)
+
+# Forms only registered funds file (open-end, closed-end, ETFs, unit trusts). A ticker held by an
+# issuer that files any of them is not a watchlist company. SEC's ``entityType`` is no help here: it
+# says "other" for some operating companies, such as recent IPOs.
+FUND_FORMS = frozenset(
+    {
+        "N-1A",
+        "N-2",
+        "N-8A",
+        "N-CSR",
+        "N-CSRS",
+        "N-CEN",
+        "NPORT-P",
+        "N-PX",
+        "485APOS",
+        "485BPOS",
+        "497",
+        "497K",
+        "24F-2NT",
+    }
 )
 
 
 class IdentityError(ValueError):
-    """The symbol cannot be tied to exactly one SEC operating company."""
+    """The symbol cannot be tied to exactly one SEC-registered company."""
 
 
 @dataclass(frozen=True)
@@ -66,10 +90,12 @@ def resolve_issuer(symbol: str, ticker_map: list[dict[str, Any]], sec: SecClient
     tickers = [str(value).upper() for value in submissions.get("tickers") or []]
     if symbol not in tickers:
         raise IdentityError(f"SEC submissions for CIK {cik} do not list {symbol}")
-    # Watchlist equities must be operating companies; this rejects a fund or ETF that holds the ticker.
-    entity_type = str(submissions.get("entityType") or "").lower()
-    if entity_type != "operating":
-        raise IdentityError(f"CIK {cik} for {symbol} is not an operating company (entityType={entity_type!r})")
+    forms = {
+        str(form).removesuffix("/A") for form in (submissions.get("filings") or {}).get("recent", {}).get("form") or []
+    }
+    fund_forms = sorted(forms & FUND_FORMS)
+    if fund_forms:
+        raise IdentityError(f"CIK {cik} for {symbol} files as a fund ({', '.join(fund_forms)}), not a company")
 
     name = str(submissions.get("name") or matches[0].get("name") or "").strip()
     issuer = Issuer(
