@@ -76,7 +76,9 @@ Data: `task_definitions`, `task_runs`.
 - Clicking anywhere on a row (or its +) expands it. The expanded row shows the trace ID (UUID, with a Copy button), the full error message, and `meta` as formatted JSON, plus "Run again", which queues a new run with the same parameters. There are no per-step timings: `task_runs` does not record them.
 - While any run is pending or running, the page polls every 10 seconds.
 
-### Alerts (`/`, M1)
+### Alerts (`/`, list in M0, materiality in M1)
+
+Until M1 the page is a read-only list of stored filings: Accepted · Ticker · Form · Item · "SEC ↗", filtered by ticker, form type and accepted date (ET). Item shows each 8-K item number with its title from Form 8-K, one per line; other forms leave it blank. Each filing shows one ticker for its CIK until M1 links filings to every issuer they name. Materiality, Pushed and the poll line arrive with M1.
 
 Data: `filings` plus the M1 materiality and notification records.
 

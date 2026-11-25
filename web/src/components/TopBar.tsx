@@ -4,13 +4,26 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 
 /** Only pages that exist get a tab (DESIGN.md: hide what is unfinished). */
-export const NAV_ITEMS = [{ key: "/tasks", label: "Tasks" }];
+export const NAV_ITEMS = [
+  { key: "/", label: "Alerts" },
+  { key: "/tasks", label: "Tasks" }
+];
+
+/** The nav tab for a path: "/" only on an exact match, other tabs also for their sub-paths. */
+export function activeNavKey(pathname: string): string {
+  const match = NAV_ITEMS.find((item) =>
+    item.key === "/"
+      ? pathname === "/"
+      : pathname === item.key || pathname.startsWith(`${item.key}/`)
+  );
+  return match?.key ?? "";
+}
 
 export function TopBar({ username }: { username: string }) {
   const { signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const active = NAV_ITEMS.find((item) => location.pathname.startsWith(item.key))?.key ?? "";
+  const active = activeNavKey(location.pathname);
 
   return (
     <Layout.Header className="flex items-center gap-32 border-0 border-b border-solid border-border-default">
