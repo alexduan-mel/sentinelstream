@@ -8,6 +8,7 @@
 
 body {
   @apply bg-bg-primary text-text-primary font-sans text-body;
+  font-variant-numeric: tabular-nums;
 }
 
 * {
@@ -15,7 +16,12 @@ body {
 }
 
 a {
-  @apply text-text-primary;
+  @apply text-semantic-info;
+}
+
+/* Table headers: 12/16, weight 500, sentence case (DESIGN.md, Typography). */
+.ant-table-wrapper .ant-table-thead > tr > th {
+  @apply text-table-header;
 }
 
 .sentinel-nav-tabs .ant-tabs-nav {
@@ -28,12 +34,8 @@ a {
 
 .sentinel-tag {
   margin-inline-end: 0;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 18px;
-}
-
-.sentinel-table-row-selected > td {
-  background: rgba(56, 189, 248, 0.1) !important;
 }
 
 .ant-table-wrapper .ant-table-cell {
