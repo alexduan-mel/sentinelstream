@@ -28,7 +28,7 @@ export function LoginPage() {
   const { state, signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = (location.state as { from?: string } | null)?.from ?? "/tasks";
+  const from = (location.state as { from?: string } | null)?.from ?? "/";
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

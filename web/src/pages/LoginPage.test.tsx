@@ -35,7 +35,7 @@ function renderLogin() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/tasks" element={<p>tasks page</p>} />
+          <Route path="/" element={<p>alerts page</p>} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>
@@ -99,13 +99,13 @@ describe("LoginPage", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   }, 10_000);
 
-  it("goes to the Tasks page after signing in", async () => {
+  it("goes to the Alerts page after signing in", async () => {
     const fetchMock = mockApi([{ status: 200, body: { id: 1, username: "admin", role: "admin" } }]);
     renderLogin();
 
     await submit("admin", "right-password");
 
-    expect(await screen.findByText("tasks page")).toBeTruthy();
+    expect(await screen.findByText("alerts page")).toBeTruthy();
     const [, init] = fetchMock.mock.calls.find(
       ([url]) => String(url) === "/api/auth/login"
     ) as unknown as [string, RequestInit];
