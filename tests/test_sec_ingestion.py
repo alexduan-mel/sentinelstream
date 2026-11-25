@@ -13,7 +13,12 @@ import pytest
 
 from ingestion.http import Pacer
 from ingestion.sec_client import SecClient, SecConfigurationError, SecError, user_agent_from_env
-from ingestion.sec_filings import ingest_sec_filings, normalise_recent_filings, parse_acceptance
+from ingestion.sec_filings import (
+    ingest_sec_filings,
+    normalise_recent_filings,
+    outside_edgar_hours,
+    parse_acceptance,
+)
 from ingestion.sec_identity import IdentityError, detect_filer_type, resolve_issuer
 from orchestration.task_runs import TaskRun, enqueue_run
 
@@ -52,13 +57,13 @@ TICKER_MAP = {
 }
 
 NVDA_FILINGS = [
-    _filing("0001045810-26-000101", "8-K", "2026-11-19T16:05:12.000Z", filed="2026-11-19", items="2.02,9.01"),
-    _filing("0001045810-26-000100", "10-Q", "2026-11-19T16:20:00.000Z", filed="2026-11-19"),
-    _filing("0001045810-26-000099", "4", "2026-11-18T18:40:00.000Z", filed="2026-11-18", doc="xslF345X05/form4.xml"),
+    _filing("0001045810-26-000101", "8-K", "2026-11-19T21:05:12.000Z", filed="2026-11-19", items="2.02,9.01"),
+    _filing("0001045810-26-000100", "10-Q", "2026-11-19T21:20:00.000Z", filed="2026-11-19"),
+    _filing("0001045810-26-000099", "4", "2026-11-18T23:40:00.000Z", filed="2026-11-18", doc="xslF345X05/form4.xml"),
 ]
 NBIS_FILINGS = [
-    _filing("0001513845-26-000040", "6-K", "2026-11-11T07:01:00.000Z", filed="2026-11-11"),
-    _filing("0001513845-26-000010", "20-F", "2026-04-30T16:30:00.000Z", filed="2026-04-30"),
+    _filing("0001513845-26-000040", "6-K", "2026-11-11T12:01:00.000Z", filed="2026-11-11"),
+    _filing("0001513845-26-000010", "20-F", "2026-04-30T20:30:00.000Z", filed="2026-04-30"),
 ]
 
 
@@ -73,7 +78,7 @@ class FakeSec:
             "/submissions/CIK0009999999.json": _submissions(
                 "Example Fund Trust",
                 ["ANT"],
-                [_filing("0009999999-26-000001", "485BPOS", "2026-10-01T09:00:00.000Z", filed="2026-10-01")],
+                [_filing("0009999999-26-000001", "485BPOS", "2026-10-01T13:00:00.000Z", filed="2026-10-01")],
                 entity_type="other",
             ),
         }
@@ -134,18 +139,29 @@ def test_client_errors_are_clear() -> None:
 # --- normalisation ---------------------------------------------------------------------------------
 
 
-def test_acceptance_time_is_new_york_wall_clock_despite_the_z() -> None:
-    accepted = parse_acceptance("2026-11-19T16:05:12.000Z")
-    assert accepted == datetime(2026, 11, 19, 16, 5, 12, tzinfo=NEW_YORK)
-    assert accepted.astimezone(UTC) == datetime(2026, 11, 19, 21, 5, 12, tzinfo=UTC)
-    # Summer time: 16:30 EDT is 20:30 UTC.
-    assert parse_acceptance("2026-04-30T16:30:00.000Z").astimezone(UTC).hour == 20
-    # An explicit offset is taken as written.
-    assert parse_acceptance("2026-11-19T21:05:12+00:00") == datetime(2026, 11, 19, 21, 5, 12, tzinfo=UTC)
+def test_acceptance_time_z_is_utc() -> None:
+    # EDGAR's index page shows this AMZN Form 4 as accepted 2026-11-24 18:46:00 (Eastern).
+    accepted = parse_acceptance("2026-11-24T23:46:00.000Z")
+    assert accepted == datetime(2026, 11, 24, 23, 46, tzinfo=UTC)
+    assert accepted.astimezone(NEW_YORK) == datetime(2026, 11, 24, 18, 46, tzinfo=NEW_YORK)
+    # Summer time: 20:30 UTC is 16:30 EDT.
+    assert parse_acceptance("2026-04-30T20:30:00.000Z").astimezone(NEW_YORK).hour == 16
+    # An explicit offset is taken as written; no zone at all means Eastern, as EDGAR's pages show.
+    assert parse_acceptance("2026-11-19T16:05:12-05:00") == datetime(2026, 11, 19, 21, 5, 12, tzinfo=UTC)
+    assert parse_acceptance("2026-11-19T16:05:12") == datetime(2026, 11, 19, 16, 5, 12, tzinfo=NEW_YORK)
+
+
+def test_outside_edgar_hours() -> None:
+    assert not outside_edgar_hours(parse_acceptance("2026-11-24T23:46:00.000Z"))  # 18:46 ET
+    assert not outside_edgar_hours(parse_acceptance("2026-11-24T11:00:00.000Z"))  # 06:00 ET
+    assert not outside_edgar_hours(parse_acceptance("2026-11-25T03:00:00.000Z"))  # 22:00 ET
+    # The same digits read as Eastern, the old mistake, land outside 06:00-22:00 ET.
+    assert outside_edgar_hours(datetime(2026, 11, 24, 23, 46, tzinfo=NEW_YORK))
+    assert outside_edgar_hours(datetime(2026, 11, 24, 2, 7, tzinfo=NEW_YORK))
 
 
 def test_normalise_keeps_valid_rows_and_counts_invalid_ones() -> None:
-    bad = _filing("not-an-accession", "8-K", "2026-11-19T16:05:12.000Z", filed="2026-11-19")
+    bad = _filing("not-an-accession", "8-K", "2026-11-19T21:05:12.000Z", filed="2026-11-19")
     no_time = _filing("0001045810-26-000102", "8-K", "", filed="2026-11-19")
     records, invalid = normalise_recent_filings(
         NVDA_CIK, _submissions("NVIDIA CORP", ["NVDA"], [*NVDA_FILINGS, bad, no_time])
@@ -306,7 +322,7 @@ def test_later_polls_add_only_new_filings_and_skip_unresolved_symbols(connect_ap
     ingest_sec_filings(_run(conn), conn, sec=fake.client())
     fake.requests.clear()
 
-    new_8k = _filing("0001045810-26-000102", "8-K", "2026-11-24T08:00:00.000Z", filed="2026-11-24", items="5.02")
+    new_8k = _filing("0001045810-26-000102", "8-K", "2026-11-24T13:00:00.000Z", filed="2026-11-24", items="5.02")
     fake.routes[f"/submissions/CIK{NVDA_CIK}.json"] = _submissions("NVIDIA CORP", ["NVDA"], [new_8k, *NVDA_FILINGS])
     second = _run(conn)
     result = ingest_sec_filings(second, conn, sec=fake.client())
@@ -362,7 +378,7 @@ def test_backfill_runs_mark_filings_as_backfill_and_missing_user_agent_fails_cle
     conn = connect_app_db()
     fake = FakeSec()
     ingest_sec_filings(_run(conn, tickers=["NVDA"]), conn, sec=fake.client())
-    newer = _filing("0001045810-26-000103", "8-K", "2026-11-24T09:00:00.000Z", filed="2026-11-24")
+    newer = _filing("0001045810-26-000103", "8-K", "2026-11-24T14:00:00.000Z", filed="2026-11-24")
     fake.routes[f"/submissions/CIK{NVDA_CIK}.json"] = _submissions("NVIDIA CORP", ["NVDA"], [newer, *NVDA_FILINGS])
 
     ingest_sec_filings(_run(conn, tickers=["NVDA"], run_mode="backfill"), conn, sec=fake.client())
@@ -376,9 +392,22 @@ def test_backfill_runs_mark_filings_as_backfill_and_missing_user_agent_fails_cle
 def test_acceptance_times_in_the_future_are_flagged(connect_app_db) -> None:
     conn = connect_app_db()
     fake = FakeSec()
-    later = (datetime.now(NEW_YORK) + timedelta(hours=2)).replace(tzinfo=None).isoformat(timespec="seconds") + ".000Z"
+    later = (datetime.now(UTC) + timedelta(hours=2)).replace(tzinfo=None).isoformat(timespec="seconds") + ".000Z"
     future = _filing("0001045810-26-000104", "8-K", later, filed=date.today().isoformat())
     fake.routes[f"/submissions/CIK{NVDA_CIK}.json"] = _submissions("NVIDIA CORP", ["NVDA"], [future])
 
     result = ingest_sec_filings(_run(conn, tickers=["NVDA"]), conn, sec=fake.client())
     assert result.meta["future_acceptance"] == 1
+
+
+def test_acceptance_times_outside_edgar_hours_are_flagged(connect_app_db) -> None:
+    conn = connect_app_db()
+    fake = FakeSec()
+    in_hours = _filing("0001045810-26-000105", "8-K", "2026-11-24T21:05:00.000Z", filed="2026-11-24")  # 16:05 ET
+    late = _filing("0001045810-26-000106", "4", "2026-11-25T04:30:00.000Z", filed="2026-11-24")  # 23:30 ET
+    fake.routes[f"/submissions/CIK{NVDA_CIK}.json"] = _submissions("NVIDIA CORP", ["NVDA"], [in_hours, late])
+
+    result = ingest_sec_filings(_run(conn, tickers=["NVDA"]), conn, sec=fake.client())
+
+    assert result.meta["acceptance_outside_edgar_hours"] == 1
+    assert "future_acceptance" not in result.meta
