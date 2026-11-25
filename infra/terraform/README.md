@@ -66,6 +66,14 @@ aws ssm put-parameter --name /sentinelstream/POSTGRES_USER --type String --value
 aws ssm put-parameter --name /sentinelstream/POSTGRES_PASSWORD --type SecureString --value "$(openssl rand -hex 32)"
 ```
 
+The ingestion jobs need two more. The deploy does not require them, but `ingest_sec_filings` and `ingest_prices` runs fail with a clear error until they are set. Containers read Parameter Store only at start, so redeploy (or re-run the Deploy workflow) after adding them:
+
+```sh
+# SEC asks for an application name and a contact e-mail.
+aws ssm put-parameter --name /sentinelstream/SEC_USER_AGENT  --type String       --value "SentinelStream <your contact e-mail>"
+aws ssm put-parameter --name /sentinelstream/MASSIVE_API_KEY --type SecureString --value "<your Massive API key>"
+```
+
 ## Reaching the host and UI
 
 No inbound ports are open. Use Session Manager:
