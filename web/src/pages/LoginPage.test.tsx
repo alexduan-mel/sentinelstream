@@ -4,24 +4,10 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "../auth/AuthContext";
+import { installDomStubs } from "../test/dom";
 import { LoginPage, lockoutMessage } from "./LoginPage";
 
-beforeAll(() => {
-  // Ant Design reads matchMedia, which jsdom lacks.
-  Object.defineProperty(window, "matchMedia", {
-    writable: true,
-    value: (query: string) => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addListener: () => undefined,
-      removeListener: () => undefined,
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
-      dispatchEvent: () => false
-    })
-  });
-});
+beforeAll(installDomStubs);
 
 type Reply = { status: number; body?: unknown; headers?: Record<string, string> };
 
