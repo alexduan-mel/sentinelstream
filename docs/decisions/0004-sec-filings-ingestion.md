@@ -1,6 +1,6 @@
 # 0004: SEC filings ingestion
 
-Status: accepted, 25 Nov 2026
+Status: accepted, 25 Nov 2026. The acceptance-time reading below was wrong and is superseded by [ADR 0006](0006-edgar-acceptance-time-is-utc.md): `acceptanceDateTime` is UTC.
 
 ## Context
 

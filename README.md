@@ -45,7 +45,7 @@ flowchart LR
 ```
 
 - **All background work goes through `task_runs`** ([ADR 0003](docs/decisions/0003-scheduler-and-worker.md)). The scheduler only enqueues. The worker claims runs with `FOR UPDATE SKIP LOCKED` and holds a per-task advisory lock, so an overlapping run ends `skipped`. The "Run now" button and the CLI insert the same `pending` rows, and the API answers 202.
-- **Every fact row carries `known_at`,** the time it became public: EDGAR acceptance for filings, the 16:00 ET close for daily bars. Writes upsert on stable business keys, so every job is safe to rerun ([ADR 0002](docs/decisions/0002-baseline-data-model.md), [ADR 0004](docs/decisions/0004-sec-filings-ingestion.md)).
+- **Every fact row carries `known_at`,** the time it became public: EDGAR acceptance for filings, the 16:00 ET close for daily bars. Writes upsert on stable business keys, so every job is safe to rerun ([ADR 0002](docs/decisions/0002-baseline-data-model.md), [ADR 0004](docs/decisions/0004-sec-filings-ingestion.md), [ADR 0006](docs/decisions/0006-edgar-acceptance-time-is-utc.md)).
 - **Data providers are treated politely.** SEC requests carry a declared User-Agent and are rate-limited on the client side. Every HTTP call retries with exponential backoff and honours `Retry-After`. A missing credential fails the run with a clear error instead of falling back to placeholder data.
 - **Sign-in** uses PBKDF2 password hashes, an HMAC-signed HttpOnly cookie, and a login lockout. Every `/api` route except login and logout requires a session ([ADR 0005](docs/decisions/0005-session-auth.md)).
 
