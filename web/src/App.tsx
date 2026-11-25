@@ -1,32 +1,21 @@
-import { useEffect, useState } from "react";
-import { Layout, Tag, Typography } from "antd";
+import { Navigate, Route, Routes } from "react-router-dom";
 
-import { fetchHealth, type Health } from "./api/health";
+import { AuthProvider } from "./auth/AuthContext";
+import { RequireAuth } from "./auth/RequireAuth";
+import { LoginPage } from "./pages/LoginPage";
+import { TasksPage } from "./pages/TasksPage";
 
 export default function App() {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetchHealth()
-      .then(setHealth)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
-  }, []);
-
   return (
-    <Layout className="min-h-screen">
-      <Layout.Header className="flex items-center justify-between">
-        <Typography.Title level={4} className="!mb-0">
-          SentinelStream
-        </Typography.Title>
-        {health && <Tag color="green">build {health.version.slice(0, 7)}</Tag>}
-        {error && <Tag color="red">{error}</Tag>}
-      </Layout.Header>
-      <Layout.Content className="p-24">
-        <Typography.Paragraph type="secondary">
-          Watchlist filing alerts and the task-runs view are on the way.
-        </Typography.Paragraph>
-      </Layout.Content>
-    </Layout>
+    <AuthProvider>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route element={<RequireAuth />}>
+          <Route path="/tasks" element={<TasksPage />} />
+        </Route>
+        {/* Alerts takes "/" in M1; until then it opens Tasks. */}
+        <Route path="*" element={<Navigate to="/tasks" replace />} />
+      </Routes>
+    </AuthProvider>
   );
 }
