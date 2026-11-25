@@ -67,6 +67,10 @@ export const sentinelTheme: ThemeConfig = {
       cellPaddingInline: 12,
       fontSize: textStyles.body.fontSize
     },
+    Tooltip: {
+      colorBgSpotlight: bg.elevated,
+      colorTextLightSolid: text.primary
+    },
     Tabs: {
       itemColor: text.muted,
       itemSelectedColor: text.primary,

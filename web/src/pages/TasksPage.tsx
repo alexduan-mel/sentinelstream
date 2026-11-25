@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Button, Select, Space, Table, Typography, type TableColumnsType } from "antd";
+import {
+  Alert,
+  Button,
+  Select,
+  Space,
+  Table,
+  Tooltip,
+  Typography,
+  type TableColumnsType
+} from "antd";
 
 import { errorMessage } from "../api/client";
 import {
@@ -187,9 +196,14 @@ export function TasksPage() {
     {
       title: "Error",
       dataIndex: "error_message",
-      ellipsis: true,
+      // Ant's own title tooltip is off so the full message shows in a styled Tooltip instead.
+      ellipsis: { showTitle: false },
       render: (value: string | null) =>
-        value ? <Typography.Text type="danger">{value}</Typography.Text> : null
+        value ? (
+          <Tooltip title={value} placement="topLeft">
+            <Typography.Text type="danger">{value}</Typography.Text>
+          </Tooltip>
+        ) : null
     }
   ];
 
@@ -224,7 +238,7 @@ export function TasksPage() {
       </Space>
 
       <Space orientation="vertical" size={8} className="w-full">
-        <SectionTitle>Recent runs</SectionTitle>
+        <SectionTitle>Run history</SectionTitle>
         <Space size={8}>
           <Select<string>
             allowClear
@@ -262,6 +276,7 @@ export function TasksPage() {
             dataSource={runs.data?.items ?? []}
             loading={runs.loading}
             expandable={{
+              expandRowByClick: true,
               expandedRowRender: (run) => <RunDetail runId={run.id} onQueued={refreshAfterQueue} />
             }}
             pagination={{

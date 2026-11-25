@@ -71,9 +71,9 @@ Nothing is smaller than 12px.
 Data: `task_definitions`, `task_runs`.
 
 - **Task definitions** table: Task (mono) · Schedule ("Every 5 min", "Weekdays 18:30 ET") · Trigger (Manual / Automatic) · Next run · Last status · a "Run now" button. "Run now" inserts a pending run and the API returns 202 (ground rule 4).
-- **Recent runs** table, newest first, filterable by task and status: Started · Task · Mode · Status · Duration · Fetched · Inserted · Deduped (right-aligned, neutral) · Error (one line, truncated).
+- **Run history** table, every run newest first, filterable by task and status: Started · Task · Mode · Status · Duration · Fetched · Inserted · Deduped (right-aligned, neutral) · Error (one line, truncated; hovering shows the full message).
 - Status tags: `succeeded` muted green, `partial` amber, `failed` red, `running` accent, `pending` and `skipped` grey.
-- Expanding a row shows the trace ID (UUID, with a Copy button), the full error message, and `meta` as formatted JSON, plus "Run again", which queues a new run with the same parameters. There are no per-step timings: `task_runs` does not record them.
+- Clicking anywhere on a row (or its +) expands it. The expanded row shows the trace ID (UUID, with a Copy button), the full error message, and `meta` as formatted JSON, plus "Run again", which queues a new run with the same parameters. There are no per-step timings: `task_runs` does not record them.
 - While any run is pending or running, the page polls every 10 seconds.
 
 ### Alerts (`/`, M1)
