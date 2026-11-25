@@ -22,17 +22,18 @@ This is the spec for the web UI. The UI is built directly in React with Ant Desi
 | Green (`semantic.positive`) | `succeeded` runs (muted), positive returns |
 | Neutral grey | Low materiality, `pending` and `skipped` runs, all other numbers |
 
-**Typography.** Two families, self-hosted through `@fontsource` packages (no font CDN):
+**Typography.** One family in two cuts, self-hosted through `@fontsource/ibm-plex-sans` and `@fontsource/ibm-plex-mono` (SIL OFL 1.1; no font CDN). The aim is soft and readable, not a terminal look:
 
-- **Geist** for all interface text.
-- **JetBrains Mono** with `font-variant-numeric: tabular-nums` for numbers, times, tickers, form types, CIKs, accession numbers and IDs.
+- **IBM Plex Sans** for all text, including numbers, times, tickers and form types. Set `font-variant-numeric: tabular-nums` globally so numbers align in columns without a monospace font.
+- **IBM Plex Mono** only for identifiers: accession numbers, CIKs, trace IDs, task names and JSON.
+- Table headers use normal sentence case, never uppercase or letter-spaced.
 
 | Style | Size / line height | Weight |
 | --- | --- | --- |
 | Page title | 20 / 28 | 600 |
 | Section title | 14 / 20 | 600 |
 | Body and table cells | 13 / 20 | 400 |
-| Secondary text, tags, table headers | 12 / 16 | 400 (headers 500, uppercase, mono, letter-spacing 0.04em) |
+| Secondary text, tags, table headers | 12 / 16 | 400 (headers 500) |
 
 Nothing is smaller than 12px.
 
@@ -46,8 +47,9 @@ Nothing is smaller than 12px.
 
 **Changes needed in code** (current values → spec):
 
-- `src/antdTheme.ts`: `controlHeight` 40 → 28, `controlHeightSM` 32 → 24, add `controlHeightLG` 32, `borderRadius` 4 → 2, `borderRadiusLG` 6 → 2, `fontSize` 14 → 13, `fontFamily` Inter → Geist, Table `cellPaddingBlock` 10 → 6, `boxShadowSecondary` → `none`.
-- `design/tokens.json`: sans font Inter → Geist; text styles and radii to the tables above.
+- `src/antdTheme.ts`: `controlHeight` 40 → 28, `controlHeightSM` 32 → 24, add `controlHeightLG` 32, `borderRadius` 4 → 2, `borderRadiusLG` 6 → 2, `fontSize` 14 → 13, `fontFamily` Inter → IBM Plex Sans, Table `cellPaddingBlock` 10 → 6, `boxShadowSecondary` → `none`.
+- `design/tokens.json`: sans font Inter → IBM Plex Sans, mono font JetBrains Mono → IBM Plex Mono; text styles and radii to the tables above.
+- `src/index.css`: `font-variant-numeric: tabular-nums` on `body`.
 - `src/index.css`: `.sentinel-tag` font size 10px → 12px.
 
 ## Layout
@@ -108,7 +110,7 @@ Not built until M3.
 
 | File | Keep | Ignore |
 | --- | --- | --- |
-| `alerts.png` | Table density, uppercase mono headers, form tags, time column format | Three-level materiality, "Synthesized summary" column, the wrapped filter rows, the price tape, "LIVE" and latency badges, the shortcut bar and footer |
+| `alerts.png` | Table density, form tags, time column format | Uppercase monospace headers and monospace numbers (see Typography), three-level materiality, "Synthesized summary" column, the wrapped filter rows, the price tape, "LIVE" and latency badges, the shortcut bar and footer |
 | `tasks.png` | Definitions table, runs table, status tags, the expanded row with error and JSON | `sync_watchlist_metrics`, "Execution pipeline steps" cards, run and node IDs, Celery, Redis and worker names, green inserted counts, the top bar style |
 | `watchlist.png` | Add-ticker input with inline error, onboarding `Steps`, the benchmarks section | Company names for SPCX and ANT (SpaceX, Anthropic), "Section 01 /" labels, the capacity limit, the filer filter, "Refresh status", 5y backfill text, all telemetry |
 | `signin.png` | Centred narrow form | The tagline, the "Enter ↵" hint, the shadow |
