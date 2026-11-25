@@ -3,7 +3,8 @@
     python -m orchestration.enqueue ingest_prices --ticker NVDA --ticker AMZN
     python -m orchestration.enqueue ingest_sec_filings --payload '{"lookback_days": 3}'
 
-On EC2: ``docker compose exec worker python -m orchestration.enqueue <task_id>`` (in an SSM session).
+On EC2, in an SSM session: ``sudo docker exec sentinelstream-worker-1 python -m orchestration.enqueue <task_id>``.
+(A bare ``docker compose exec`` fails there: the prod Compose file needs variables only deploy.sh sets.)
 The API's manual-trigger endpoint inserts the same kind of row.
 """
 
