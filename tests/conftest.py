@@ -69,3 +69,29 @@ def connect_app_db(connect_test_db) -> Callable[[], Connection]:
         return conn
 
     return connect
+
+
+ADMIN_PASSWORD = "test-admin-password"
+
+
+@pytest.fixture
+def api_client(connect_app_db, monkeypatch, tmp_path):
+    """A TestClient over a migrated database, with auth configured. Not signed in."""
+    from fastapi.testclient import TestClient
+
+    from api.app import create_app
+
+    monkeypatch.setenv("AUTH_SESSION_SECRET", "s" * 40)
+    monkeypatch.setenv("AUTH_ADMIN_PASSWORD", ADMIN_PASSWORD)
+    monkeypatch.delenv("AUTH_COOKIE_SECURE", raising=False)
+    app = create_app(version="test", web_dist=tmp_path / "missing", connect=connect_app_db)
+    with TestClient(app) as client:
+        yield client
+
+
+@pytest.fixture
+def signed_in_client(api_client):
+    """``api_client`` signed in as the bootstrap admin."""
+    response = api_client.post("/api/auth/login", json={"username": "admin", "password": ADMIN_PASSWORD})
+    assert response.status_code == 200, response.text
+    return api_client

@@ -23,6 +23,8 @@ docker compose logs -f worker
 
 Until the ingestion handlers land, such a run ends `failed` with "no handler registered".
 
+The JSON API is under `/api`, and every route except login and logout needs a session ([ADR 0005](docs/decisions/0005-session-auth.md)). Set `AUTH_SESSION_SECRET` and `AUTH_ADMIN_PASSWORD` in `.env`, then sign in as `admin` with that password. The first login stores its hash. On EC2 both values are Parameter Store SecureStrings.
+
 Every app container applies pending SQL migrations from [`infra/migrations`](infra/migrations) before it starts, under a Postgres advisory lock ([ADR 0002](docs/decisions/0002-baseline-data-model.md)). To run them by hand: `uv run python -m orchestration.migrations` with the `POSTGRES_*` settings exported.
 
 Development without Docker:
