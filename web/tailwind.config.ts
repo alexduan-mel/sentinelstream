@@ -57,41 +57,32 @@ const config: Config = {
       DEFAULT: `${tokens.radii.sm}px`,
       sm: `${tokens.radii.sm}px`,
       md: `${tokens.radii.md}px`,
-      lg: `${tokens.radii.lg}px`,
-      pill: `${tokens.radii.pill}px`
+      lg: `${tokens.radii.lg}px`
     },
     boxShadow: {
       sm: tokens.shadows.sm,
       md: tokens.shadows.md
     },
     fontFamily: {
-      sans: ["Inter", ...defaultTheme.fontFamily.sans],
+      sans: tokens.typography.fontFamily.sans,
       mono: tokens.typography.fontFamily.mono
     },
     fontSize: {
       ...defaultTheme.fontSize,
-      h1: [
-        `${tokens.typography.textStyles.h1.fontSize}px`,
+      "page-title": [
+        `${tokens.typography.textStyles.pageTitle.fontSize}px`,
         {
-          lineHeight: `${tokens.typography.textStyles.h1.lineHeight}px`,
-          fontWeight: `${tokens.typography.textStyles.h1.fontWeight}`,
-          letterSpacing: `${tokens.typography.textStyles.h1.letterSpacing}px`
+          lineHeight: `${tokens.typography.textStyles.pageTitle.lineHeight}px`,
+          fontWeight: `${tokens.typography.textStyles.pageTitle.fontWeight}`,
+          letterSpacing: `${tokens.typography.textStyles.pageTitle.letterSpacing}px`
         }
       ],
-      h2: [
-        `${tokens.typography.textStyles.h2.fontSize}px`,
+      "section-title": [
+        `${tokens.typography.textStyles.sectionTitle.fontSize}px`,
         {
-          lineHeight: `${tokens.typography.textStyles.h2.lineHeight}px`,
-          fontWeight: `${tokens.typography.textStyles.h2.fontWeight}`,
-          letterSpacing: `${tokens.typography.textStyles.h2.letterSpacing}px`
-        }
-      ],
-      h3: [
-        `${tokens.typography.textStyles.h3.fontSize}px`,
-        {
-          lineHeight: `${tokens.typography.textStyles.h3.lineHeight}px`,
-          fontWeight: `${tokens.typography.textStyles.h3.fontWeight}`,
-          letterSpacing: `${tokens.typography.textStyles.h3.letterSpacing}px`
+          lineHeight: `${tokens.typography.textStyles.sectionTitle.lineHeight}px`,
+          fontWeight: `${tokens.typography.textStyles.sectionTitle.fontWeight}`,
+          letterSpacing: `${tokens.typography.textStyles.sectionTitle.letterSpacing}px`
         }
       ],
       body: [
@@ -102,28 +93,20 @@ const config: Config = {
           letterSpacing: `${tokens.typography.textStyles.body.letterSpacing}px`
         }
       ],
-      label: [
-        `${tokens.typography.textStyles.label.fontSize}px`,
+      secondary: [
+        `${tokens.typography.textStyles.secondary.fontSize}px`,
         {
-          lineHeight: `${tokens.typography.textStyles.label.lineHeight}px`,
-          fontWeight: `${tokens.typography.textStyles.label.fontWeight}`,
-          letterSpacing: `${tokens.typography.textStyles.label.letterSpacing}px`
+          lineHeight: `${tokens.typography.textStyles.secondary.lineHeight}px`,
+          fontWeight: `${tokens.typography.textStyles.secondary.fontWeight}`,
+          letterSpacing: `${tokens.typography.textStyles.secondary.letterSpacing}px`
         }
       ],
-      caption: [
-        `${tokens.typography.textStyles.caption.fontSize}px`,
+      "table-header": [
+        `${tokens.typography.textStyles.tableHeader.fontSize}px`,
         {
-          lineHeight: `${tokens.typography.textStyles.caption.lineHeight}px`,
-          fontWeight: `${tokens.typography.textStyles.caption.fontWeight}`,
-          letterSpacing: `${tokens.typography.textStyles.caption.letterSpacing}px`
-        }
-      ],
-      mono: [
-        `${tokens.typography.textStyles.mono.fontSize}px`,
-        {
-          lineHeight: `${tokens.typography.textStyles.mono.lineHeight}px`,
-          fontWeight: `${tokens.typography.textStyles.mono.fontWeight}`,
-          letterSpacing: `${tokens.typography.textStyles.mono.letterSpacing}px`
+          lineHeight: `${tokens.typography.textStyles.tableHeader.lineHeight}px`,
+          fontWeight: `${tokens.typography.textStyles.tableHeader.fontWeight}`,
+          letterSpacing: `${tokens.typography.textStyles.tableHeader.letterSpacing}px`
         }
       ]
     },

@@ -1,33 +1,50 @@
 import { theme, type ThemeConfig } from "antd";
 
+import tokens from "../design/tokens.json";
+
+const { bg, border, text, semantic, state } = tokens.colors;
+const { fontFamily, textStyles } = tokens.typography;
+
 export const sentinelTheme: ThemeConfig = {
   algorithm: theme.darkAlgorithm,
   token: {
-    colorPrimary: "#38BDF8",
-    colorInfo: "#38BDF8",
-    colorSuccess: "#22C55E",
-    colorWarning: "#F59E0B",
-    colorError: "#EF4444",
-    colorBgBase: "#0B1020",
-    colorBgContainer: "#111A2E",
-    colorBgElevated: "#16213A",
-    colorBorder: "#22304A",
-    colorBorderSecondary: "#1A2740",
-    colorText: "#E7ECF4",
-    colorTextSecondary: "#A8B3C7",
-    colorTextTertiary: "#7F8AA3",
-    colorTextDisabled: "#5D667C",
-    borderRadius: 4,
-    borderRadiusLG: 6,
-    controlHeight: 40,
-    controlHeightSM: 32,
-    fontFamily:
-      "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-    fontSize: 14,
+    colorPrimary: semantic.info,
+    colorInfo: semantic.info,
+    colorSuccess: semantic.positive,
+    colorWarning: semantic.warning,
+    colorError: semantic.negative,
+    colorLink: semantic.info,
+    colorBgBase: bg.primary,
+    colorBgLayout: bg.primary,
+    colorBgContainer: bg.surface,
+    colorBgElevated: bg.elevated,
+    colorBorder: border.default,
+    colorBorderSecondary: border.subtle,
+    colorText: text.primary,
+    colorTextSecondary: text.secondary,
+    colorTextTertiary: text.muted,
+    colorTextDisabled: text.disabled,
+    borderRadius: tokens.radii.sm,
+    borderRadiusSM: tokens.radii.sm,
+    borderRadiusLG: tokens.radii.lg,
+    controlHeight: 28,
+    controlHeightSM: 24,
+    controlHeightLG: 32,
+    fontFamily: fontFamily.sans.join(", "),
+    fontFamilyCode: fontFamily.mono.join(", "),
+    fontSize: textStyles.body.fontSize,
+    fontSizeSM: textStyles.secondary.fontSize,
     boxShadow: "none",
-    boxShadowSecondary: "0 4px 12px rgba(0,0,0,0.28)"
+    boxShadowSecondary: "none",
+    boxShadowTertiary: "none"
   },
   components: {
+    Layout: {
+      headerHeight: 48,
+      headerPadding: "0 24px",
+      headerBg: bg.surface,
+      bodyBg: bg.primary
+    },
     Button: {
       primaryShadow: "none",
       defaultShadow: "none",
@@ -35,32 +52,32 @@ export const sentinelTheme: ThemeConfig = {
       fontWeight: 600
     },
     Input: {
-      activeShadow: "0 0 0 2px rgba(56,189,248,0.18)"
+      activeShadow: `0 0 0 2px ${state.focusRing}`
     },
     Select: {
-      activeOutlineColor: "rgba(56,189,248,0.18)",
-      optionSelectedBg: "rgba(56,189,248,0.12)"
+      activeOutlineColor: state.focusRing,
+      optionSelectedBg: state.selected
     },
     Table: {
-      headerBg: "#0F1729",
-      headerColor: "#7F8AA3",
-      rowHoverBg: "rgba(231,236,244,0.04)",
-      borderColor: "#1A2740",
-      cellPaddingBlock: 10,
+      headerBg: bg.surface,
+      headerColor: text.muted,
+      rowHoverBg: state.hover,
+      borderColor: border.subtle,
+      cellPaddingBlock: 6,
       cellPaddingInline: 12,
-      fontSize: 13
+      fontSize: textStyles.body.fontSize
     },
     Tabs: {
-      itemColor: "#7F8AA3",
-      itemSelectedColor: "#E7ECF4",
-      itemHoverColor: "#E7ECF4",
-      inkBarColor: "#38BDF8",
+      itemColor: text.muted,
+      itemSelectedColor: text.primary,
+      itemHoverColor: text.primary,
+      inkBarColor: semantic.info,
       horizontalItemGutter: 24
     },
     Segmented: {
-      itemSelectedBg: "#16213A",
-      itemSelectedColor: "#E7ECF4",
-      trackBg: "#0B1020"
+      itemSelectedBg: bg.elevated,
+      itemSelectedColor: text.primary,
+      trackBg: bg.primary
     }
   }
 };
