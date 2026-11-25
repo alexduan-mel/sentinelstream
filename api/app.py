@@ -9,7 +9,7 @@ from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from api import auth
+from api import auth, tasks
 from api.db import Connect, default_connect
 
 DEFAULT_WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
@@ -49,6 +49,7 @@ def create_app(
     app.include_router(auth.public_router)
     signed_in = [Depends(auth.current_user)]
     app.include_router(auth.session_router, dependencies=signed_in)
+    app.include_router(tasks.router, dependencies=signed_in)
 
     # Mounted last so API routes always win over static files.
     if resolved_web_dist.is_dir():

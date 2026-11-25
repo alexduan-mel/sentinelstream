@@ -212,7 +212,7 @@ def test_logout_clears_the_cookie(signed_in_client) -> None:
 def test_every_api_route_except_login_and_logout_requires_a_session(api_client, tmp_path) -> None:
     paths = create_app(version="t", web_dist=tmp_path / "missing").openapi()["paths"]
     api_paths = {path: methods for path, methods in paths.items() if path.startswith("/api/")}
-    assert set(api_paths) >= PUBLIC_API_PATHS | {"/api/auth/me"}
+    assert set(api_paths) >= PUBLIC_API_PATHS | {"/api/auth/me", "/api/tasks", "/api/task-runs"}
 
     for path, methods in api_paths.items():
         if path in PUBLIC_API_PATHS:
