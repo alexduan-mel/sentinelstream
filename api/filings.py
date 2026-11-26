@@ -14,12 +14,12 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from api.db import DbConn
+from filings.edgar import sec_index_url
 from filings.form_8k import item_title
 
 router = APIRouter(prefix="/api", tags=["filings"])
 
 FORMS_WITH_8K_ITEMS = frozenset({"8-K", "8-K/A"})
-SEC_ARCHIVES = "https://www.sec.gov/Archives/edgar/data"
 
 
 class FilingItem(BaseModel):
@@ -46,11 +46,6 @@ class FilingPage(BaseModel):
 class FilingFacets(BaseModel):
     tickers: list[str]
     form_types: list[str]
-
-
-def sec_index_url(cik: str, accession_no: str) -> str:
-    """EDGAR's index page for a filing, which links the primary document and every exhibit."""
-    return f"{SEC_ARCHIVES}/{int(cik)}/{accession_no.replace('-', '')}/{accession_no}-index.htm"
 
 
 def filing_items(form_type: str, numbers: list[str]) -> list[FilingItem]:

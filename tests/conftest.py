@@ -95,3 +95,32 @@ def signed_in_client(api_client):
     response = api_client.post("/api/auth/login", json={"username": "admin", "password": ADMIN_PASSWORD})
     assert response.status_code == 200, response.text
     return api_client
+
+
+class RecordingNotifier:
+    """Stands in for Slack: records each alert it is sent, or raises ``fail_with`` instead."""
+
+    channel = "slack"
+
+    def __init__(self) -> None:
+        self.sent: list = []
+        self.fail_with: Exception | None = None
+        self.closed = 0
+
+    def send(self, alert) -> None:
+        if self.fail_with is not None:
+            raise self.fail_with
+        self.sent.append(alert)
+
+    def close(self) -> None:
+        self.closed += 1
+
+
+@pytest.fixture(autouse=True)
+def notifier(monkeypatch) -> RecordingNotifier:
+    """Every test that polls SEC gets this instead of the real Slack notifier, so none reach Slack."""
+    from alerts import slack
+
+    recorder = RecordingNotifier()
+    monkeypatch.setattr(slack.SlackNotifier, "from_env", lambda: recorder)
+    return recorder
