@@ -1,17 +1,16 @@
 """``ingest_sec_filings``: poll EDGAR submissions for watchlist issuers and record new filings.
 
-New in this repo (the prototype never stored filings). Each run:
+New in this repo (the prototype never stored filings). The watch set is every active watchlist
+equity that ticker onboarding (``ingestion.onboarding``) has tied to an SEC issuer: status
+``backfilling`` or ``ready``. Onboarding owns identity; the poller never resolves a symbol. Each run:
 
-1. Resolves the SEC identity of active watchlist equities that have no CIK yet (``sec_identity``).
-   A symbol SEC cannot match is marked ``onboarding_status = 'failed'`` with the reason, and is not
-   retried until a run with ``force_refresh``.
-2. Fetches each issuer's submissions record once (share classes share a CIK) and upserts the recent
+1. Fetches each issuer's submissions record once (share classes share a CIK) and upserts the recent
    filings by accession number, so reruns only add what is new. Each filing is also linked to every
    watchlist issuer whose submissions list it (``filing_issuers``, ADR 0007): a filing can name
    several issuers, and the alert belongs to each of them.
-3. Classifies each new link high or low with the materiality rules (``alerts``, ADR 0008), fetching
+2. Classifies each new link high or low with the materiality rules (``alerts``, ADR 0008), fetching
    a Form 4's XML when the rule needs it.
-4. Pushes each new high filing to Slack, once per accession number (``alerts.deliver``, ADR 0009).
+3. Pushes each new high filing to Slack, once per accession number (``alerts.deliver``, ADR 0009).
 
 ``known_at`` is EDGAR's acceptance time, which the submissions API gives in UTC (ADR 0006). An
 issuer's first poll records its existing filings and links with ``is_backfill = TRUE``, so alerting
@@ -35,7 +34,6 @@ from alerts.deliver import deliver_alerts
 from alerts.notifier import Notifier
 from ingestion.market_calendar import NEW_YORK
 from ingestion.sec_client import SecClient, SecError
-from ingestion.sec_identity import IdentityError, Issuer, resolve_issuer
 from orchestration.task_runs import RunResult, TaskRun
 
 LOGGER = logging.getLogger(__name__)
@@ -93,7 +91,11 @@ def _optional_date(value: Any) -> date | None:
 
 def normalise_recent_filings(cik: str, submissions: dict[str, Any]) -> tuple[list[FilingRecord], int]:
     """The filings in a submissions record's ``recent`` block, plus how many rows were invalid."""
-    recent = (submissions.get("filings") or {}).get("recent") or {}
+    return normalise_filing_columns(cik, (submissions.get("filings") or {}).get("recent") or {})
+
+
+def normalise_filing_columns(cik: str, recent: dict[str, Any]) -> tuple[list[FilingRecord], int]:
+    """Filings from EDGAR's column layout: a ``recent`` block, or an older submissions page."""
     accessions = recent.get("accessionNumber") or []
     columns = ("filingDate", "reportDate", "acceptanceDateTime", "form", "items", "primaryDocument", "isXBRL")
     values = {name: recent.get(name) or [] for name in columns}
@@ -128,14 +130,16 @@ def normalise_recent_filings(cik: str, submissions: dict[str, Any]) -> tuple[lis
     return records, invalid
 
 
-def _watch_instruments(conn: Connection, tickers: list[str]) -> list[tuple[int, str, str | None, str | None]]:
-    """Active watchlist equities (id, symbol, cik, onboarding_error), narrowed to ``tickers`` if given."""
+def _watch_instruments(conn: Connection, tickers: list[str]) -> list[tuple[str, str]]:
+    """The watch set as (symbol, cik), narrowed to ``tickers`` if given: active watchlist equities that
+    onboarding has tied to an SEC issuer (``backfilling`` or ``ready``)."""
     with conn.cursor() as cursor:
         cursor.execute(
             """
-            SELECT id, symbol, cik, onboarding_error
+            SELECT symbol, cik
             FROM instruments
             WHERE active AND asset_type = 'equity' AND role = 'watchlist'
+              AND cik IS NOT NULL AND onboarding_status IN ('backfilling', 'ready')
               AND (cardinality(%(tickers)s::text[]) = 0 OR symbol = ANY(%(tickers)s::text[]))
             ORDER BY symbol
             """,
@@ -144,31 +148,6 @@ def _watch_instruments(conn: Connection, tickers: list[str]) -> list[tuple[int, 
         rows = cursor.fetchall()
     conn.commit()
     return rows
-
-
-def _record_identity(conn: Connection, instrument_id: int, issuer: Issuer) -> None:
-    with conn.cursor() as cursor:
-        cursor.execute(
-            """
-            UPDATE instruments
-            SET cik = %s, name = %s, exchange = %s, filer_type = %s, onboarding_error = NULL,
-                onboarding_status = CASE WHEN onboarding_status = 'failed' THEN 'pending' ELSE onboarding_status END,
-                updated_at = NOW()
-            WHERE id = %s
-            """,
-            (issuer.cik, issuer.name or None, issuer.exchange, issuer.filer_type, instrument_id),
-        )
-    conn.commit()
-
-
-def _record_identity_failure(conn: Connection, instrument_id: int, message: str) -> None:
-    with conn.cursor() as cursor:
-        cursor.execute(
-            "UPDATE instruments SET onboarding_status = 'failed', onboarding_error = %s, updated_at = NOW() "
-            "WHERE id = %s",
-            (message, instrument_id),
-        )
-    conn.commit()
 
 
 def upsert_filings(
@@ -248,10 +227,9 @@ def ingest_sec_filings(
     run: TaskRun, conn: Connection, *, sec: SecClient | None = None, notifier: Notifier | None = None
 ) -> RunResult:
     instruments = _watch_instruments(conn, run.tickers)
-    meta: dict[str, Any] = {"resolved": [], "unresolved": [], "errors": [], "issuers": {}, "invalid_rows": 0}
+    meta: dict[str, Any] = {"errors": [], "issuers": {}, "invalid_rows": 0}
     if run.tickers:
-        known = {symbol for _id, symbol, _cik, _error in instruments}
-        meta["unknown_tickers"] = sorted(set(run.tickers) - known)
+        meta["unknown_tickers"] = sorted(set(run.tickers) - {symbol for symbol, _cik in instruments})
     if not instruments:
         return RunResult(status="succeeded", meta={**meta, "message": "no_watchlist_equities"})
 
@@ -259,52 +237,15 @@ def ingest_sec_filings(
     attempted = failed = 0
     fetched = inserted = 0
     future_acceptance = off_hours = 0
+    ciks: dict[str, list[str]] = {}
+    for symbol, cik in instruments:
+        ciks.setdefault(cik, []).append(symbol)
     try:
-        # 1. Identity for symbols without a CIK.
-        submissions_by_cik: dict[str, dict[str, Any]] = {}
-        ciks: dict[str, list[str]] = {}
-        ticker_map: list[dict[str, Any]] | None = None
-        for instrument_id, symbol, cik, onboarding_error in instruments:
-            if cik:
-                ciks.setdefault(cik, []).append(symbol)
-                continue
-            if onboarding_error and not run.force_refresh:
-                meta["unresolved"].append({"symbol": symbol, "reason": onboarding_error})
-                continue
-            attempted += 1
-            try:
-                if ticker_map is None:
-                    ticker_map = client.ticker_map()
-                issuer, submissions = resolve_issuer(symbol, ticker_map, client)
-            except IdentityError as exc:
-                failed += 1
-                _record_identity_failure(conn, instrument_id, str(exc))
-                meta["unresolved"].append({"symbol": symbol, "reason": str(exc)})
-                LOGGER.warning("sec_identity_unresolved run_id=%d symbol=%s reason=%s", run.id, symbol, exc)
-                continue
-            except SecError as exc:  # transient: not recorded on the instrument, retried next run
-                failed += 1
-                meta["errors"].append(f"{symbol}: {exc}")
-                continue
-            _record_identity(conn, instrument_id, issuer)
-            meta["resolved"].append(
-                {"symbol": symbol, "cik": issuer.cik, "name": issuer.name, "filer_type": issuer.filer_type}
-            )
-            LOGGER.info(
-                "sec_identity_resolved run_id=%d symbol=%s cik=%s filer_type=%s",
-                run.id,
-                symbol,
-                issuer.cik,
-                issuer.filer_type,
-            )
-            submissions_by_cik[issuer.cik] = submissions
-            ciks.setdefault(issuer.cik, []).append(symbol)
-
-        # 2. Filings, once per issuer.
+        # 1. Filings, once per issuer.
         for cik, symbols in sorted(ciks.items()):
             attempted += 1
             try:
-                submissions = submissions_by_cik.get(cik) or client.submissions(cik)
+                submissions = client.submissions(cik)
                 fetched_at = datetime.now(UTC)
                 records, invalid = normalise_recent_filings(cik, submissions)
             except SecError as exc:
@@ -334,7 +275,7 @@ def ingest_sec_filings(
                 "backfill": is_backfill,
             }
 
-        # 3. Materiality for every link not yet classified (ADR 0008).
+        # 2. Materiality for every link not yet classified (ADR 0008).
         stats = classify_links(conn, client)
         meta["materiality"] = stats.as_meta()
         if stats.errors:
@@ -347,7 +288,7 @@ def ingest_sec_filings(
         if sec is None:
             client.close()
 
-    # 4. Slack for high news, deduplicated by accession number (ADR 0009).
+    # 3. Slack for high news, deduplicated by accession number (ADR 0009).
     delivery = deliver_alerts(
         conn,
         channel=slack.CHANNEL,
@@ -370,7 +311,7 @@ def ingest_sec_filings(
         status = "partial"
     else:
         status = "failed"
-    error = "; ".join([*meta["errors"], *(f"{u['symbol']}: {u['reason']}" for u in meta["unresolved"])])
+    error = "; ".join(meta["errors"])
     return RunResult(
         status=status,
         fetched_count=fetched,

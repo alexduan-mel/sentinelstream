@@ -42,7 +42,13 @@ def test_list_tasks_shows_seeded_definitions(signed_in_client) -> None:
     response = signed_in_client.get("/api/tasks")
 
     assert response.status_code == 200
-    assert response.json() == [
+    tasks = response.json()
+    # Onboarding is due at once after its migration (to onboard the seeded watchlist), then daily.
+    onboarding = tasks.pop()
+    assert onboarding["task_id"] == "onboard_tickers"
+    assert (onboarding["schedule_label"], onboarding["trigger_mode"]) == ("Daily 19:00 ET", "automatic")
+    assert onboarding["next_run_at"] is not None
+    assert tasks == [
         {
             "task_id": "ingest_prices",
             "label": "Ingest daily price bars",

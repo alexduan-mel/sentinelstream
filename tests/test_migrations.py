@@ -282,6 +282,39 @@ def test_008_marks_highs_already_classified_as_skipped_for_slack(connect_test_db
     ]
 
 
+def test_009_starts_identified_equities_backfilling_and_schedules_onboarding(
+    connect_test_db, migrations_dir: Path
+) -> None:
+    conn = connect_test_db()
+    for path in DEFAULT_DIRECTORY.glob("00[2-8]_*.sql"):
+        shutil.copy(path, migrations_dir)
+    run_migrations(conn, migrations_dir)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "UPDATE sentinel_stream.instruments SET cik = '0001045810', filer_type = 'domestic' WHERE symbol = 'NVDA'"
+        )
+        cursor.execute("UPDATE sentinel_stream.instruments SET cik = '0002130357' WHERE symbol = 'ANT'")
+    conn.commit()
+
+    shutil.copy(DEFAULT_DIRECTORY / "009_ticker_onboarding.sql", migrations_dir)
+    assert run_migrations(conn, migrations_dir) == ["009_ticker_onboarding.sql"]
+
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT symbol, onboarding_status FROM sentinel_stream.instruments ORDER BY symbol")
+        statuses = dict(cursor.fetchall())
+        cursor.execute(
+            "SELECT trigger_mode, schedule_type, scheduled_time::text, next_run_at <= NOW() "
+            "FROM sentinel_stream.task_definitions WHERE task_id = 'onboard_tickers'"
+        )
+        task = cursor.fetchone()
+    conn.rollback()
+    # Identified (CIK and filer type) and polled already: keeps being polled while it backfills.
+    assert statuses["NVDA"] == "backfilling"
+    # No filer type, no identity, or not a watchlist equity: onboarding starts from the top.
+    assert statuses["ANT"] == statuses["AMZN"] == statuses["QQQ"] == "pending"
+    assert task == ("automatic", "daily_time", "19:00:00", True)
+
+
 def test_skips_applied_files(connect_test_db, migrations_dir: Path) -> None:
     # Not idempotent on purpose: running 002 a second time would fail on CREATE TABLE.
     _write(migrations_dir, "002_probe.sql", "CREATE TABLE probe (id INT);\n" + _record("002_probe.sql", 2))

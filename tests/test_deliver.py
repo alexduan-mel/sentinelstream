@@ -11,7 +11,7 @@ from alerts.notifier import NotifierConfigError, NotifierError
 from ingestion.sec_filings import ingest_sec_filings
 from tests.form4_xml import form4, transaction
 from tests.test_classify import _archive, _form4_filing, _nvda_lists
-from tests.test_sec_ingestion import NBIS_CIK, NVDA_CIK, FakeSec, _filing, _run
+from tests.test_sec_ingestion import NBIS_CIK, NVDA_CIK, FakeSec, _filing, _run, _watch
 
 ANT_CIK = "0002130357"
 NOW = datetime(2026, 11, 26, 22, 0, tzinfo=UTC)
@@ -68,6 +68,7 @@ def _deliver(conn, notifier, *, now: datetime = NOW):
 
 def test_a_high_news_filing_is_sent_once_naming_every_high_issuer(connect_app_db, notifier) -> None:
     conn = connect_app_db()
+    _watch(conn)
     _setup(conn)
     accession = "0002130357-26-000010"
     _filing_row(conn, accession, accepted_at=NOW - timedelta(minutes=4))
@@ -90,6 +91,7 @@ def test_a_high_news_filing_is_sent_once_naming_every_high_issuer(connect_app_db
 
 def test_history_low_and_unclassified_links_are_never_queued(connect_app_db, notifier) -> None:
     conn = connect_app_db()
+    _watch(conn)
     _setup(conn)
     for accession, level, backfill in (
         ("0001045810-26-000001", "high", True),
@@ -109,6 +111,7 @@ def test_history_low_and_unclassified_links_are_never_queued(connect_app_db, not
 
 def test_a_filing_accepted_too_long_ago_is_recorded_as_skipped_not_sent(connect_app_db, notifier) -> None:
     conn = connect_app_db()
+    _watch(conn)
     _setup(conn)
     old, fresh = "0001045810-26-000001", "0001045810-26-000002"
     _filing_row(conn, old, accepted_at=NOW - MAX_AGE - timedelta(minutes=1))
@@ -125,6 +128,7 @@ def test_a_filing_accepted_too_long_ago_is_recorded_as_skipped_not_sent(connect_
 
 def test_a_failed_send_stays_pending_stops_the_batch_and_is_retried(connect_app_db, notifier) -> None:
     conn = connect_app_db()
+    _watch(conn)
     _setup(conn)
     first, second = "0001045810-26-000001", "0001045810-26-000002"
     _filing_row(conn, first, accepted_at=NOW - timedelta(minutes=9))
@@ -150,6 +154,7 @@ def test_a_failed_send_stays_pending_stops_the_batch_and_is_retried(connect_app_
 
 def test_a_pending_alert_never_delivered_within_max_age_is_given_up(connect_app_db, notifier) -> None:
     conn = connect_app_db()
+    _watch(conn)
     _setup(conn)
     accession = "0001045810-26-000001"
     _filing_row(conn, accession, accepted_at=NOW - timedelta(minutes=5))
@@ -168,6 +173,7 @@ def test_a_pending_alert_never_delivered_within_max_age_is_given_up(connect_app_
 
 def test_missing_webhook_leaves_alerts_queued_with_a_clear_error(connect_app_db) -> None:
     conn = connect_app_db()
+    _watch(conn)
     _setup(conn)
     accession = "0001045810-26-000001"
     _filing_row(conn, accession, accepted_at=NOW - timedelta(minutes=5))
@@ -187,6 +193,7 @@ def test_missing_webhook_leaves_alerts_queued_with_a_clear_error(connect_app_db)
 
 def test_the_poll_pushes_a_new_purchase_but_not_the_first_polls_history(connect_app_db, notifier) -> None:
     conn = connect_app_db()
+    _watch(conn)
     fake = FakeSec()
     first = ingest_sec_filings(_run(conn), conn, sec=fake.client())
     assert notifier.sent == []  # NVDA's history includes a high 8-K; history is never pushed
@@ -210,6 +217,7 @@ def test_the_poll_pushes_a_new_purchase_but_not_the_first_polls_history(connect_
 
 def test_a_poll_whose_alert_could_not_be_sent_is_partial(connect_app_db, notifier) -> None:
     conn = connect_app_db()
+    _watch(conn)
     fake = FakeSec()
     ingest_sec_filings(_run(conn), conn, sec=fake.client())
 

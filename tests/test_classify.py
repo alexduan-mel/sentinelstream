@@ -9,7 +9,7 @@ import httpx
 from alerts import classify as classify_module
 from ingestion.sec_filings import ingest_sec_filings
 from tests.form4_xml import form4, transaction
-from tests.test_sec_ingestion import NBIS_CIK, NVDA_CIK, NVDA_FILINGS, FakeSec, _filing, _run, _submissions
+from tests.test_sec_ingestion import NBIS_CIK, NVDA_CIK, NVDA_FILINGS, FakeSec, _filing, _run, _submissions, _watch
 
 
 def _links(conn) -> dict[str, tuple]:
@@ -37,6 +37,7 @@ def _form4_filing(accession: str, accepted: str = "2026-11-25T21:30:00.000Z") ->
 
 def test_first_poll_classifies_history_from_items_and_form4_xml(connect_app_db) -> None:
     conn = connect_app_db()
+    _watch(conn)
     result = ingest_sec_filings(_run(conn), conn, sec=FakeSec().client())
 
     links = _links(conn)
@@ -62,6 +63,7 @@ def test_first_poll_classifies_history_from_items_and_form4_xml(connect_app_db) 
 
 def test_a_new_insider_purchase_is_high_and_its_transactions_are_stored(connect_app_db) -> None:
     conn = connect_app_db()
+    _watch(conn)
     fake = FakeSec()
     ingest_sec_filings(_run(conn), conn, sec=fake.client())
 
@@ -100,6 +102,7 @@ def test_a_new_insider_purchase_is_high_and_its_transactions_are_stored(connect_
 
 def test_a_new_form4_that_cannot_be_fetched_is_retried_and_the_run_is_partial(connect_app_db) -> None:
     conn = connect_app_db()
+    _watch(conn)
     fake = FakeSec()
     ingest_sec_filings(_run(conn), conn, sec=fake.client())
 
@@ -120,6 +123,7 @@ def test_a_new_form4_that_cannot_be_fetched_is_retried_and_the_run_is_partial(co
 
 def test_an_unreadable_form4_is_low_with_the_reason(connect_app_db) -> None:
     conn = connect_app_db()
+    _watch(conn)
     fake = FakeSec()
     ingest_sec_filings(_run(conn), conn, sec=fake.client())
 
@@ -139,6 +143,7 @@ def test_an_unreadable_form4_is_low_with_the_reason(connect_app_db) -> None:
 def test_history_form4s_are_fetched_a_few_per_run(connect_app_db, monkeypatch) -> None:
     monkeypatch.setattr(classify_module, "BACKFILL_FORM4_PER_RUN", 2)
     conn = connect_app_db()
+    _watch(conn)
     fake = FakeSec()
     history = [_form4_filing(f"0001045810-26-00040{n}", f"2026-11-0{n}T15:00:00.000Z") for n in range(1, 6)]
     _nvda_lists(fake, *history)
