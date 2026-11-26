@@ -233,6 +233,48 @@ def test_older_filing_pages_are_read_back_two_years_only(connect_app_db) -> None
     assert "/submissions/CIK0001045810-submissions-002.json" not in sec.paths()
 
 
+def test_prices_start_at_the_listing_and_bars_of_an_earlier_security_are_dropped(connect_app_db) -> None:
+    conn = connect_app_db()
+    sec, massive = _fake_sec(), FakeMassive()
+    # NVDA stands in for a reused symbol: an ETF traded under it before this company listed.
+    massive.details["NVDA"] = {"ticker": "NVDA", "name": "NVIDIA", "cik": "0001045810", "list_date": "2026-06-12"}
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO price_bars (instrument_id, trading_date, close, provider) "
+            "SELECT id, DATE '2026-03-02', 22.0, 'massive' FROM instruments WHERE symbol = 'NVDA'"
+        )
+    conn.commit()
+
+    result = _onboard(conn, sec, massive, tickers=["NVDA"])
+
+    assert result.meta["bars_before_listing_dropped"] == {"NVDA": 1}
+    assert _count(conn, "SELECT MIN(trading_date) = '2026-06-12' FROM price_bars p JOIN instruments i "
+                        "ON i.id = p.instrument_id WHERE i.symbol = 'NVDA'") is True  # fmt: skip
+    aggs = next(r for r in massive.requests if "/aggs/" in r.url.path)
+    assert "/2026-06-12/2026-11-25" in aggs.url.path
+
+
+def test_a_symbol_massive_ties_to_another_company_loads_no_prices(connect_app_db) -> None:
+    conn = connect_app_db()
+    sec, massive = _fake_sec(), FakeMassive()
+    massive.details["NVDA"] = {
+        "ticker": "NVDA",
+        "name": "Some Other Co",
+        "cik": "0000000042",
+        "list_date": "2020-01-02",
+    }
+
+    result = _onboard(conn, sec, massive, tickers=["NVDA"])
+
+    assert result.status == "partial"  # the sweep onboards the other seeded tickers
+    nvda = _status(conn)["NVDA"]
+    assert nvda[0] == "backfilling"
+    assert nvda[3] == "prices: Massive lists NVDA under CIK 0000000042 (Some Other Co), but SEC under 0001045810"
+    assert "NVDA" not in massive.symbols()
+    assert _count(conn, "SELECT COUNT(*) FROM price_bars p JOIN instruments i ON i.id = p.instrument_id "
+                        "WHERE i.symbol = 'NVDA'") == 0  # fmt: skip
+
+
 def test_force_refresh_looks_a_rejected_symbol_up_again(connect_app_db) -> None:
     conn = connect_app_db()
     sec, massive = _fake_sec(), FakeMassive()

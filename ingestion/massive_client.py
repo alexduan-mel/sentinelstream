@@ -8,6 +8,7 @@ Requests are paced by ``MASSIVE_RATE_LIMIT_PER_MINUTE`` (default 5, the free pla
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
@@ -46,6 +47,13 @@ def rate_limit_from_env() -> int:
     if value <= 0:
         raise MassiveConfigurationError(f"MASSIVE_RATE_LIMIT_PER_MINUTE must be a positive integer, got {raw!r}")
     return value
+
+
+@dataclass(frozen=True)
+class TickerDetails:
+    name: str | None
+    cik: str | None
+    list_date: date | None
 
 
 class MassiveClient:
@@ -114,3 +122,41 @@ class MassiveClient:
             raise MassiveError(f"Massive results for {symbol} are not a list")
         payload["results"] = results
         return payload
+
+    def ticker_details(self, symbol: str) -> TickerDetails | None:
+        """What Massive knows about the security now trading as ``symbol``; None if it knows none.
+
+        ``list_date`` is when this security started trading under the symbol. A symbol can be reused,
+        so bars dated before it belong to an earlier security.
+        """
+        try:
+            response = send_with_retries(
+                lambda: self._http.get(f"/v3/reference/tickers/{symbol}", params={"apiKey": self._api_key}),
+                pacer=self._pacer,
+                base_delay=self._base_delay,
+                describe=f"massive ticker {symbol}",
+            )
+        except httpx.TransportError as exc:
+            raise MassiveError(f"Massive request for {symbol} details failed: {self._redact(str(exc))}") from None
+        if response.status_code == 404:
+            return None
+        if response.status_code >= 400:
+            body = self._redact(response.text.strip())[:300]
+            raise MassiveError(f"Massive request for {symbol} details failed: HTTP {response.status_code} {body}")
+        try:
+            results = response.json().get("results") or {}
+        except (ValueError, AttributeError) as exc:
+            raise MassiveError(f"Massive details for {symbol} are not a JSON object") from exc
+        if not isinstance(results, dict) or not results:
+            return None
+        raw_list_date = str(results.get("list_date") or "").strip()
+        try:
+            list_date = date.fromisoformat(raw_list_date) if raw_list_date else None
+        except ValueError as exc:
+            raise MassiveError(f"Massive list date for {symbol} is not a date: {raw_list_date!r}") from exc
+        cik = str(results.get("cik") or "").strip() or None
+        return TickerDetails(
+            name=str(results.get("name") or "").strip() or None,
+            cik=f"{int(cik):010d}" if cik and cik.isdigit() else None,
+            list_date=list_date,
+        )

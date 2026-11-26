@@ -32,3 +32,14 @@ M1 needs an onboarding job: validate a symbol, map it to its SEC CIK, detect the
 - One worker runs tasks one at a time, so an onboarding run delays the next SEC poll by its length: about 15 seconds for one new ticker, a few minutes for the first run over the eight seeded instruments (Massive's free plan allows 5 requests a minute).
 - `xbrl_facts` holds values as each company tagged them. Mapping different tags to one line item is M3 work.
 - Older submissions pages and companies without XBRL (a 404 from SEC, as for a fresh IPO) are handled. A ticker whose name SEC lists under several CIKs is rejected rather than guessed.
+
+## Amendment, 26 Nov 2026: prices start at the listing date
+
+The first onboarding run loaded 454 bars for SPCX from Nov 2024. Bars until 6 Apr 2026 were about $22 on a few thousand shares a day, then, after a gap, about $160 on over 100 million shares from 12 Jun 2026. Massive serves bars for whatever traded under a symbol, and SPCX belonged to an ETF before SpaceX listed under it. The mix would corrupt every return computed from it.
+
+The prices step now first reads Massive's ticker details, which give the listing date and CIK; for SPCX that is 12 Jun 2026 and CIK 0001181412, the same as SEC's. This is the "validate the symbol with the price provider" step of the spec:
+
+- If Massive ties the symbol to a different CIK than SEC does, no bars are loaded, and the ticker stays `backfilling` with the mismatch as its error.
+- Bars start at the later of two years back and the listing date, and stored bars dated before the listing are deleted.
+
+Migration 010 moves ready equities back to `backfilling` and makes onboarding due at once, so the next run cleans up the stored history. A second Massive request per ticker costs about 12 seconds at the free plan's 5 requests a minute.

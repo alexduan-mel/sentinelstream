@@ -9,8 +9,10 @@ company. For a watchlist equity each run:
    SEC poller's watch set at once, so nothing filed during the backfill is missed.
 2. **Filings**: stores the submissions record's recent filings, plus older pages back two years, as
    history (``is_backfill = TRUE``), so none of it is pushed to Slack.
-3. **Prices**: two years of split-adjusted daily bars from Massive, back to the listing date for a
-   recent IPO.
+3. **Prices**: Massive's details for the symbol first. If Massive ties it to a different CIK than SEC
+   does, no bars are loaded. Otherwise two years of split-adjusted daily bars, starting no earlier
+   than the security's listing date: a symbol can be reused (SPCX traded as an ETF before SpaceX
+   listed under it on 12 Jun 2026), so any stored bars from before the listing are deleted.
 4. **XBRL facts**: every company fact filed in the last two years (``filings.xbrl``).
 5. **Ready.**
 
@@ -30,7 +32,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from psycopg2.extensions import connection as Connection
@@ -210,8 +212,24 @@ class _Run:
         _new, linked = upsert_filings(self.conn, records, is_backfill=True, task_run_id=self.run.id)
         return linked
 
-    def prices(self, instrument: _Instrument) -> int:
+    def prices(self, instrument: _Instrument, cik: str | None) -> int:
         date_from = self.target - HISTORY
+        try:
+            details = self.massive.ticker_details(instrument.symbol)
+        except MassiveError as exc:
+            raise _StepError("prices", exc) from None
+        if details is not None:
+            if cik and details.cik and details.cik != cik:
+                raise _StepError(
+                    "prices",
+                    RuntimeError(
+                        f"Massive lists {instrument.symbol} under CIK {details.cik} ({details.name}), "
+                        f"but SEC under {cik}"
+                    ),
+                )
+            if details.list_date is not None:
+                self._drop_bars_before(instrument, details.list_date)
+                date_from = max(date_from, details.list_date)
         try:
             payload = self.massive.daily_bars(instrument.symbol, date_from, self.target)
         except MassiveError as exc:
@@ -221,6 +239,23 @@ class _Run:
         )
         inserted, updated = upsert_bars(self.conn, rows)
         return inserted + updated
+
+    def _drop_bars_before(self, instrument: _Instrument, list_date: date) -> None:
+        """Bars dated before the listing came from an earlier security that used the symbol."""
+        with self.conn.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM price_bars WHERE instrument_id = %s AND trading_date < %s", (instrument.id, list_date)
+            )
+            dropped = cursor.rowcount
+        self.conn.commit()
+        if dropped:
+            LOGGER.warning(
+                "price_bars_before_listing_dropped symbol=%s list_date=%s count=%d",
+                instrument.symbol,
+                list_date.isoformat(),
+                dropped,
+            )
+            self.meta.setdefault("bars_before_listing_dropped", {})[instrument.symbol] = dropped
 
     def xbrl(self, cik: str) -> int:
         try:
@@ -293,13 +328,14 @@ def store_xbrl_facts(conn: Connection, cik: str, facts: list[XbrlFact], *, task_
 
 def _onboard(state: _Run, instrument: _Instrument) -> None:
     loaded: dict[str, int] = {}
+    cik: str | None = None
     if instrument.is_equity:
         identified = state.identify(instrument)
         if identified is None:
             return
         cik, submissions = identified
         loaded["filings"] = state.filings(cik, submissions)
-    loaded["price_bars"] = state.prices(instrument)
+    loaded["price_bars"] = state.prices(instrument, cik)
     if instrument.is_equity:
         loaded["xbrl_facts"] = state.xbrl(cik)
     _set_status(state.conn, instrument, "ready")
