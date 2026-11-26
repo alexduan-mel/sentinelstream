@@ -7,7 +7,7 @@ from filings.form_8k import ITEM_TITLES, item_title
 
 NVDA_CIK = "0001045810"
 AMZN_CIK = "0001018724"
-SHARED_CIK = "0000000001"
+UNKNOWN_CIK = "0000000001"
 
 
 def test_8k_items_have_sec_titles_and_other_forms_do_not() -> None:
@@ -45,7 +45,7 @@ def _seed(connect_app_db) -> None:
             ("0001045810-26-000001", NVDA_CIK, "8-K", ["2.02", "9.01"], "2026-11-20 21:05:00+00"),
             ("0001018724-26-000002", AMZN_CIK, "4", [], "2026-11-21 04:30:00+00"),  # Nov 20 23:30 ET
             ("0001018724-26-000003", AMZN_CIK, "10-Q", [], "2026-11-21 15:00:00+00"),
-            ("0000000001-26-000004", SHARED_CIK, "8-K", ["8.01"], "2026-11-22 13:00:00+00"),
+            ("0000000001-26-000004", UNKNOWN_CIK, "8-K", ["8.01"], "2026-11-22 13:00:00+00"),
         ]
         for accession, cik, form, items, accepted in rows:
             cursor.execute(
@@ -55,6 +55,14 @@ def _seed(connect_app_db) -> None:
                 """,
                 (accession, cik, form, items, accepted, accepted, accepted),
             )
+            cursor.execute(
+                "INSERT INTO filing_issuers (accession_no, cik, is_backfill) VALUES (%s, %s, FALSE)", (accession, cik)
+            )
+        # NVDA's 8-K is also listed under AMZN, so it belongs to both.
+        cursor.execute(
+            "INSERT INTO filing_issuers (accession_no, cik, is_backfill) VALUES ('0001045810-26-000001', %s, FALSE)",
+            (AMZN_CIK,),
+        )
     conn.commit()
 
 
@@ -80,12 +88,12 @@ def test_filings_are_listed_newest_first_with_ticker_items_and_link(signed_in_cl
         "0001045810-26-000001",
     ]
     unknown_issuer, _, form4, earnings = page["items"]
-    assert unknown_issuer["ticker"] is None
-    assert form4["ticker"] == "AMZN" and form4["items"] == []
+    assert unknown_issuer["tickers"] == []
+    assert form4["tickers"] == ["AMZN"] and form4["items"] == []
     assert earnings == {
         "accession_no": "0001045810-26-000001",
         "cik": NVDA_CIK,
-        "ticker": "NVDA",
+        "tickers": ["AMZN", "NVDA"],
         "form_type": "8-K",
         "items": [
             {"number": "2.02", "title": "Results of Operations and Financial Condition"},
@@ -105,7 +113,12 @@ def test_filings_filter_by_ticker_form_and_eastern_date(signed_in_client, connec
         assert response.status_code == 200, response.text
         return response.json()
 
-    assert _accessions(get(ticker=["amzn"])) == ["0001018724-26-000003", "0001018724-26-000002"]
+    assert _accessions(get(ticker=["amzn"])) == [
+        "0001018724-26-000003",
+        "0001018724-26-000002",
+        "0001045810-26-000001",  # linked to AMZN as well as NVDA
+    ]
+    assert _accessions(get(ticker=["NVDA"])) == ["0001045810-26-000001"]
     assert get(ticker=["NVDA", "AMZN"])["total"] == 3
     assert get(ticker=["ZZZZ"]) == {"items": [], "total": 0}
     assert _accessions(get(form_type=["8-K", "4"])) == [

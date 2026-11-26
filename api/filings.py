@@ -1,8 +1,8 @@
 """Read-only list of SEC filings for the Alerts page.
 
 Materiality and Slack delivery arrive with M1; until then the page lists every stored filing, newest
-first. A filing belongs to an issuer (CIK), and is shown under one ticker for that issuer until M1
-adds a filing-to-issuer link for filings that name several issuers.
+first. A filing is shown under every watchlist issuer whose EDGAR submissions list it
+(``filing_issuers``, ADR 0007), with one ticker per issuer.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ class FilingItem(BaseModel):
 class Filing(BaseModel):
     accession_no: str
     cik: str
-    ticker: str | None
+    tickers: list[str]
     form_type: str
     items: list[FilingItem]
     accepted_at: datetime
@@ -61,8 +61,9 @@ def filing_items(form_type: str, numbers: list[str]) -> list[FilingItem]:
 
 # Filters shared by the count and the page. Dates are US Eastern calendar days, as the UI shows them.
 _WHERE = """
-    WHERE (cardinality(%(tickers)s::text[]) = 0 OR f.cik IN (
-              SELECT cik FROM instruments WHERE cik IS NOT NULL AND symbol = ANY(%(tickers)s::text[])))
+    WHERE (cardinality(%(tickers)s::text[]) = 0 OR f.accession_no IN (
+              SELECT l.accession_no FROM filing_issuers l JOIN instruments i ON i.cik = l.cik
+              WHERE i.symbol = ANY(%(tickers)s::text[])))
       AND (cardinality(%(form_types)s::text[]) = 0 OR f.form_type = ANY(%(form_types)s::text[]))
       AND (%(accepted_from)s::date IS NULL
            OR f.accepted_at >= %(accepted_from)s::date::timestamp AT TIME ZONE 'America/New_York')
@@ -97,15 +98,20 @@ def list_filings(
         total = int(cursor.fetchone()[0])
         cursor.execute(
             f"""
-            SELECT f.accession_no, f.cik, ticker.symbol, f.form_type, f.items, f.accepted_at, f.filed_date
+            SELECT f.accession_no, f.cik, tickers.symbols, f.form_type, f.items, f.accepted_at, f.filed_date
             FROM filings f
-            LEFT JOIN LATERAL (
-                -- One ticker per issuer for now: an active watchlist symbol first, then any other.
-                SELECT symbol FROM instruments i
-                WHERE i.cik = f.cik
-                ORDER BY (i.active AND i.role = 'watchlist') DESC, i.symbol
-                LIMIT 1
-            ) ticker ON TRUE
+            CROSS JOIN LATERAL (
+                -- One ticker per linked issuer: an active watchlist symbol first, then any other.
+                SELECT COALESCE(array_agg(ticker.symbol ORDER BY ticker.symbol), ARRAY[]::text[]) AS symbols
+                FROM filing_issuers l
+                CROSS JOIN LATERAL (
+                    SELECT symbol FROM instruments i
+                    WHERE i.cik = l.cik
+                    ORDER BY (i.active AND i.role = 'watchlist') DESC, i.symbol
+                    LIMIT 1
+                ) ticker
+                WHERE l.accession_no = f.accession_no
+            ) tickers
             {_WHERE}
             ORDER BY f.accepted_at DESC, f.id DESC
             LIMIT %(limit)s OFFSET %(offset)s
@@ -118,7 +124,7 @@ def list_filings(
             Filing(
                 accession_no=row[0],
                 cik=row[1],
-                ticker=row[2],
+                tickers=row[2],
                 form_type=row[3],
                 items=filing_items(row[3], row[4]),
                 accepted_at=row[5],

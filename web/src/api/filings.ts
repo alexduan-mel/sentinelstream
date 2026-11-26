@@ -5,7 +5,8 @@ export type FilingItem = { number: string; title: string | null };
 export type Filing = {
   accession_no: string;
   cik: string;
-  ticker: string | null;
+  /** One ticker per watchlist issuer the filing is listed under; empty if none is known. */
+  tickers: string[];
   form_type: string;
   items: FilingItem[];
   accepted_at: string;
