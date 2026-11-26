@@ -15,7 +15,7 @@ SentinelStream is a personal research assistant for a long-horizon US stock inve
 
 </details>
 
-Screenshots are from the live EC2 deployment.
+Screenshots are from the live EC2 deployment at 1440 px.
 
 ## Architecture
 
