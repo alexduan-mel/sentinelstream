@@ -315,6 +315,39 @@ def test_009_starts_identified_equities_backfilling_and_schedules_onboarding(
     assert task == ("automatic", "daily_time", "19:00:00", True)
 
 
+def test_010_sends_ready_equities_back_through_onboarding(connect_test_db, migrations_dir: Path) -> None:
+    conn = connect_test_db()
+    for path in DEFAULT_DIRECTORY.glob("00[2-9]_*.sql"):
+        shutil.copy(path, migrations_dir)
+    run_migrations(conn, migrations_dir)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "UPDATE sentinel_stream.instruments SET cik = '0001181412', filer_type = 'domestic', "
+            "onboarding_status = 'ready' WHERE symbol = 'SPCX'"
+        )
+        cursor.execute("UPDATE sentinel_stream.instruments SET onboarding_status = 'ready' WHERE symbol = 'QQQ'")
+        cursor.execute(
+            "UPDATE sentinel_stream.task_definitions SET next_run_at = NOW() + INTERVAL '1 day' "
+            "WHERE task_id = 'onboard_tickers'"
+        )
+    conn.commit()
+
+    shutil.copy(DEFAULT_DIRECTORY / "010_reonboard_for_listing_dates.sql", migrations_dir)
+    assert run_migrations(conn, migrations_dir) == ["010_reonboard_for_listing_dates.sql"]
+
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT symbol, onboarding_status FROM sentinel_stream.instruments ORDER BY symbol")
+        statuses = dict(cursor.fetchall())
+        cursor.execute(
+            "SELECT next_run_at <= NOW() FROM sentinel_stream.task_definitions WHERE task_id = 'onboard_tickers'"
+        )
+        due = cursor.fetchone()[0]
+    conn.rollback()
+    assert statuses["SPCX"] == "backfilling"  # still polled while prices are reloaded
+    assert statuses["QQQ"] == "ready"  # an ETF's listing predates the two-year window
+    assert due is True
+
+
 def test_skips_applied_files(connect_test_db, migrations_dir: Path) -> None:
     # Not idempotent on purpose: running 002 a second time would fail on CREATE TABLE.
     _write(migrations_dir, "002_probe.sql", "CREATE TABLE probe (id INT);\n" + _record("002_probe.sql", 2))

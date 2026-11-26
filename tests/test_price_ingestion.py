@@ -41,10 +41,14 @@ class FakeMassive:
         self.requests: list[httpx.Request] = []
         self.failing: dict[str, httpx.Response] = {}
         self.no_data: set[str] = set()
+        # Ticker details by symbol (``/v3/reference/tickers/{sym}``); a symbol not listed has none.
+        self.details: dict[str, dict] = {}
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         parts = request.url.path.split("/")  # /v2/aggs/ticker/{sym}/range/1/day/{from}/{to}
+        if parts[1:4] == ["v3", "reference", "tickers"]:
+            return httpx.Response(200, json={"status": "OK", "results": self.details.get(parts[4], {})})
         symbol, start, end = parts[4], date.fromisoformat(parts[8]), date.fromisoformat(parts[9])
         if symbol in self.failing:
             return self.failing[symbol]
@@ -57,7 +61,8 @@ class FakeMassive:
         return MassiveClient(KEY, transport=httpx.MockTransport(self.handler), pacer=Pacer(0), base_delay=0)
 
     def symbols(self) -> list[str]:
-        return [request.url.path.split("/")[4] for request in self.requests]
+        """Symbols whose bars were requested."""
+        return [request.url.path.split("/")[4] for request in self.requests if "/aggs/" in request.url.path]
 
 
 # --- client ----------------------------------------------------------------------------------------
