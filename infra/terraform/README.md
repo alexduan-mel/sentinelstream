@@ -12,7 +12,7 @@ Everything SentinelStream runs on in AWS (us-east-1). See [ADR 0001](../../docs/
 | `stage1/ecr.tf` | Image repository with immutable SHA tags; the last 30 images are kept for rollback |
 | `stage1/storage.tf` | S3 bucket for the filing archive and DB backups (versioned, private, TLS only) |
 | `stage1/observability.tf` | Log group (14 days), failed-task-run alarm, SNS email topic |
-| `stage1/budget.tf` | Monthly budget: email at $10 actual, $30 forecast and $30 actual |
+| `stage1/budget.tf` | Monthly budget on spend before credits: email at $15 actual, $30 forecast and $30 actual |
 
 Expected cost is about US$12 a month: the instance $6.13, public IPv4 $3.65, 22 GB of gp3 $1.76, and snapshots, logs, ECR and S3 under $1 together.
 

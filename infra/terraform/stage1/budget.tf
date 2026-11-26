@@ -5,6 +5,12 @@ resource "aws_budgets_budget" "monthly" {
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
 
+  # Track spend before credits. The account's Free-plan credits cover the whole bill, so with credits
+  # included every threshold sees about $0 and no notification would ever fire.
+  cost_types {
+    include_credit = false
+  }
+
   notification {
     comparison_operator       = "GREATER_THAN"
     threshold                 = var.budget_early_warning_usd
