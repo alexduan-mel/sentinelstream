@@ -227,6 +227,8 @@ class _Run:
                         f"but SEC under {cik}"
                     ),
                 )
+            if not instrument.is_equity and details.name:
+                self._name_from_massive(instrument, details.name)
             if details.list_date is not None:
                 self._drop_bars_before(instrument, details.list_date)
                 date_from = max(date_from, details.list_date)
@@ -239,6 +241,15 @@ class _Run:
         )
         inserted, updated = upsert_bars(self.conn, rows)
         return inserted + updated
+
+    def _name_from_massive(self, instrument: _Instrument, name: str) -> None:
+        """An ETF has no SEC issuer to name it, so its name comes from Massive (equities use SEC's)."""
+        with self.conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE instruments SET name = %s, updated_at = NOW() WHERE id = %s AND name IS DISTINCT FROM %s",
+                (name, instrument.id, name),
+            )
+        self.conn.commit()
 
     def _drop_bars_before(self, instrument: _Instrument, list_date: date) -> None:
         """Bars dated before the listing came from an earlier security that used the symbol."""

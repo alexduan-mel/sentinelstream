@@ -348,6 +348,26 @@ def test_010_sends_ready_equities_back_through_onboarding(connect_test_db, migra
     assert due is True
 
 
+def test_011_sends_unnamed_benchmarks_back_through_onboarding(connect_test_db, migrations_dir: Path) -> None:
+    conn = connect_test_db()
+    for path in [*DEFAULT_DIRECTORY.glob("00[2-9]_*.sql"), DEFAULT_DIRECTORY / "010_reonboard_for_listing_dates.sql"]:
+        shutil.copy(path, migrations_dir)
+    run_migrations(conn, migrations_dir)
+    with conn.cursor() as cursor:
+        cursor.execute("UPDATE sentinel_stream.instruments SET onboarding_status = 'ready' WHERE role = 'benchmark'")
+        cursor.execute("UPDATE sentinel_stream.instruments SET name = 'Already named' WHERE symbol = 'SPY'")
+    conn.commit()
+
+    shutil.copy(DEFAULT_DIRECTORY / "011_name_benchmarks.sql", migrations_dir)
+    assert run_migrations(conn, migrations_dir) == ["011_name_benchmarks.sql"]
+
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT symbol, onboarding_status FROM sentinel_stream.instruments WHERE role = 'benchmark'")
+        statuses = dict(cursor.fetchall())
+    conn.rollback()
+    assert statuses == {"QQQ": "pending", "SPY": "ready"}
+
+
 def test_skips_applied_files(connect_test_db, migrations_dir: Path) -> None:
     # Not idempotent on purpose: running 002 a second time would fail on CREATE TABLE.
     _write(migrations_dir, "002_probe.sql", "CREATE TABLE probe (id INT);\n" + _record("002_probe.sql", 2))

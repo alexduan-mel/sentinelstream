@@ -8,6 +8,7 @@ import { useTimeZone, type ZoneChoice } from "../lib/timeZone";
 /** Only pages that exist get a tab (DESIGN.md: hide what is unfinished). */
 export const NAV_ITEMS = [
   { key: "/", label: "Alerts" },
+  { key: "/watchlist", label: "Watchlist" },
   { key: "/tasks", label: "Tasks" }
 ];
 
