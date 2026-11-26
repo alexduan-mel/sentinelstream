@@ -14,7 +14,7 @@ M1 is done when every box is ticked:
 - [x] Filing-to-issuer link: a filing listed in several watchlist issuers' submissions is linked to each of them, so alerts route to the subject company
 - [x] Materiality rules v0, branching on filer type: 8-K items 1.01, 2.02, 4.02 and 5.02, plus Form 4 open-market purchases (code P, read from the Form 4 XML), are high; everything else is low
 - [x] Slack notifier behind a notifier interface: high items only, a link to the filing, deduplicated by accession number; the webhook URL lives in SSM Parameter Store
-- [ ] Alerts page shows materiality, Slack delivery and when the poller last ran
+- [x] Alerts page shows materiality, Slack delivery and when the poller last ran
 - [ ] Failed runs emit the `task_run_failed` log line that the existing CloudWatch alarm watches
 - [ ] Ticker onboarding job (pending → backfilling → ready) and the Watchlist page
 - [ ] Alert detail page

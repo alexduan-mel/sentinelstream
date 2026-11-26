@@ -9,6 +9,8 @@ from filings.form_8k import ITEM_TITLES, item_title
 NVDA_CIK = "0001045810"
 AMZN_CIK = "0001018724"
 UNKNOWN_CIK = "0000000001"
+EARNINGS_REASON = "Item 2.02 Results of Operations and Financial Condition"
+PURCHASE_REASON = "2 open-market purchases by Jassy Andrew R (Director)"
 
 
 def test_8k_items_have_sec_titles_and_other_forms_do_not() -> None:
@@ -64,6 +66,36 @@ def _seed(connect_app_db) -> None:
             "INSERT INTO filing_issuers (accession_no, cik, is_backfill) VALUES ('0001045810-26-000001', %s, FALSE)",
             (AMZN_CIK,),
         )
+        # Materiality per link. The unknown issuer's 8-K stays unclassified.
+        for accession, cik, level, reason in (
+            ("0001045810-26-000001", NVDA_CIK, "high", EARNINGS_REASON),
+            ("0001045810-26-000001", AMZN_CIK, "low", "8-K without a high item"),
+            ("0001018724-26-000002", AMZN_CIK, "high", PURCHASE_REASON),
+            ("0001018724-26-000003", AMZN_CIK, "low", "10-Q: not pushed in v0"),
+        ):
+            cursor.execute(
+                "UPDATE filing_issuers SET materiality = %s, materiality_reason = %s, classified_at = NOW() "
+                "WHERE accession_no = %s AND cik = %s",
+                (level, reason, accession, cik),
+            )
+        # Two purchases count; the sale does not.
+        for line, code, shares, disposed in ((1, "P", 1000, "A"), (2, "P", 400.5, "A"), (3, "S", 9999, "D")):
+            cursor.execute(
+                "INSERT INTO form4_transactions (accession_no, line_no, issuer_cik, reporting_owners, owner_roles, "
+                "transaction_code, acquired_disposed, shares, known_at) "
+                "VALUES ('0001018724-26-000002', %s, %s, 'Jassy Andrew R', 'Director', %s, %s, %s, "
+                "'2026-11-21 04:30:00+00')",
+                (line, AMZN_CIK, code, disposed, shares),
+            )
+        cursor.execute(
+            "INSERT INTO alert_deliveries (accession_no, channel, status, attempts, delivered_at) "
+            "VALUES ('0001018724-26-000002', 'slack', 'delivered', 1, '2026-11-21 04:34:10+00')"
+        )
+        cursor.execute(
+            "INSERT INTO alert_deliveries (accession_no, channel, status, skip_reason) "
+            "VALUES ('0001045810-26-000001', 'slack', 'skipped', %s)",
+            ("classified before the Slack notifier was switched on",),
+        )
     conn.commit()
 
 
@@ -90,7 +122,18 @@ def test_filings_are_listed_newest_first_with_ticker_items_and_link(signed_in_cl
     ]
     unknown_issuer, _, form4, earnings = page["items"]
     assert unknown_issuer["tickers"] == []
+    assert (unknown_issuer["materiality"], unknown_issuer["materiality_reason"], unknown_issuer["slack"]) == (
+        None,
+        None,
+        None,
+    )
     assert form4["tickers"] == ["AMZN"] and form4["items"] == []
+    assert (form4["materiality"], form4["materiality_reason"], form4["purchase_shares"]) == (
+        "high",
+        PURCHASE_REASON,
+        1400.5,
+    )
+    assert form4["slack"] == {"status": "delivered", "delivered_at": "2026-11-21T04:34:10Z", "detail": None}
     assert earnings == {
         "accession_no": "0001045810-26-000001",
         "cik": NVDA_CIK,
@@ -103,6 +146,15 @@ def test_filings_are_listed_newest_first_with_ticker_items_and_link(signed_in_cl
         "accepted_at": "2026-11-20T21:05:00Z",
         "filed_date": "2026-11-20",
         "sec_url": sec_index_url(NVDA_CIK, "0001045810-26-000001"),
+        # High for NVDA, low for AMZN: high wins, with NVDA's reason.
+        "materiality": "high",
+        "materiality_reason": EARNINGS_REASON,
+        "purchase_shares": None,
+        "slack": {
+            "status": "skipped",
+            "delivered_at": None,
+            "detail": "classified before the Slack notifier was switched on",
+        },
     }
 
 
@@ -134,6 +186,11 @@ def test_filings_filter_by_ticker_form_and_eastern_date(signed_in_client, connec
     ]
     assert _accessions(get(accepted_from="2026-11-21")) == ["0000000001-26-000004", "0001018724-26-000003"]
 
+    assert _accessions(get(materiality="high")) == ["0001018724-26-000002", "0001045810-26-000001"]
+    # Low means every link classified and none high, so the unclassified 8-K is in neither.
+    assert _accessions(get(materiality="low")) == ["0001018724-26-000003"]
+    assert get(materiality="high", ticker=["NVDA"])["total"] == 1
+
     paged = get(limit=1, offset=1)
     assert _accessions(paged) == ["0001018724-26-000003"] and paged["total"] == 4
     assert get(limit=10, offset=10) == {"items": [], "total": 4}
@@ -147,6 +204,7 @@ def test_filings_filter_by_ticker_form_and_eastern_date(signed_in_client, connec
         {"offset": -1},
         {"accepted_from": "nope"},
         {"accepted_from": "2026-11-22", "accepted_to": "2026-11-21"},
+        {"materiality": "medium"},
     ],
 )
 def test_filings_reject_bad_parameters(signed_in_client, params) -> None:
