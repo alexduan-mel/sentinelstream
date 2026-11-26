@@ -14,7 +14,7 @@ The prototype never stored filings. Its SEC client fetched one annual report for
 
 **History is marked as backfill.** The first poll of an issuer stores its recent filings (up to about 1,000) with `is_backfill = TRUE`, and so does any run with `run_mode = backfill`. Later polls store new filings with `is_backfill = FALSE`. A filing missed while the poller was down is still news when it arrives, so it is not marked as backfill.
 
-**First sighting wins.** Filings upsert on `accession_no` with `DO NOTHING`, so `first_seen_at` and `task_run_id` keep the run that first saw each filing, and reruns only add new rows.
+**First sighting wins.** Filings upsert on `accession_no` with `DO NOTHING`, so `first_seen_at` and `task_run_id` keep the run that first saw each filing, and reruns only add new rows. [ADR 0007](0007-filing-issuer-links.md) adds a link from each filing to every watchlist issuer that lists it, with its own backfill flag.
 
 **No response cache.** Each run fetches every submissions record fresh. The ticker map is downloaded at most once per run, and only when a symbol needs resolving.
 

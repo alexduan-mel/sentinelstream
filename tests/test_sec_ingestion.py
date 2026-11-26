@@ -339,6 +339,93 @@ def test_later_polls_add_only_new_filings_and_skip_unresolved_symbols(connect_ap
     assert rows["0001045810-26-000101"][7] != second.id  # first sighting is kept
 
 
+def _links(conn) -> dict[tuple[str, str], tuple[bool, int | None]]:
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT accession_no, cik, is_backfill, task_run_id FROM filing_issuers")
+        rows = {(row[0], row[1]): (row[2], row[3]) for row in cursor.fetchall()}
+    conn.rollback()
+    return rows
+
+
+# A filing that EDGAR lists under both NVDA and NBIS, as an agreement between them might be.
+SHARED = _filing("0001045810-26-000200", "8-K", "2026-11-25T13:00:00.000Z", filed="2026-11-25", items="1.01")
+
+
+def _list_shared(fake: FakeSec, *, nvda: bool = True, nbis: bool = True) -> None:
+    if nvda:
+        fake.routes[f"/submissions/CIK{NVDA_CIK}.json"] = _submissions("NVIDIA CORP", ["NVDA"], [SHARED, *NVDA_FILINGS])
+    if nbis:
+        fake.routes[f"/submissions/CIK{NBIS_CIK}.json"] = _submissions(
+            "Nebius Group N.V.", ["NBIS"], [SHARED, *NBIS_FILINGS]
+        )
+
+
+def test_every_poll_links_filings_to_the_issuer_that_lists_them(connect_app_db) -> None:
+    conn = connect_app_db()
+    fake = FakeSec()
+    first = _run(conn)
+    result = ingest_sec_filings(first, conn, sec=fake.client())
+
+    assert result.meta["issuers"][NVDA_CIK]["linked"] == 3
+    links = _links(conn)
+    assert len(links) == 5
+    assert links[("0001045810-26-000101", NVDA_CIK)] == (True, first.id)
+    assert links[("0001513845-26-000040", NBIS_CIK)] == (True, first.id)
+
+    # A rerun adds nothing.
+    again = ingest_sec_filings(_run(conn), conn, sec=fake.client())
+    assert again.meta["issuers"][NVDA_CIK]["linked"] == 0
+    assert _links(conn) == links
+
+
+def test_a_new_filing_listed_under_two_watched_issuers_is_news_for_both(connect_app_db) -> None:
+    conn = connect_app_db()
+    fake = FakeSec()
+    ingest_sec_filings(_run(conn), conn, sec=fake.client())
+    _list_shared(fake)
+
+    second = _run(conn)
+    result = ingest_sec_filings(second, conn, sec=fake.client())
+
+    assert result.inserted_count == 1  # one filing row
+    links = _links(conn)
+    assert links[(SHARED["accessionNumber"], NVDA_CIK)] == (False, second.id)
+    assert links[(SHARED["accessionNumber"], NBIS_CIK)] == (False, second.id)
+    # The filing row keeps the issuer polled first.
+    assert next(row for row in _filings(conn) if row[0] == SHARED["accessionNumber"])[1] == NVDA_CIK
+
+
+def test_history_for_a_new_issuer_is_still_news_for_one_already_watched(connect_app_db) -> None:
+    conn = connect_app_db()
+    fake = FakeSec()
+    ingest_sec_filings(_run(conn, tickers=["NBIS"]), conn, sec=fake.client())
+    _list_shared(fake)
+
+    # NVDA's first poll runs before NBIS's (lower CIK), so it stores the shared filing as history.
+    second = _run(conn)
+    ingest_sec_filings(second, conn, sec=fake.client())
+
+    links = _links(conn)
+    assert links[(SHARED["accessionNumber"], NVDA_CIK)] == (True, second.id)
+    assert links[(SHARED["accessionNumber"], NBIS_CIK)] == (False, second.id)
+
+
+def test_an_old_filing_found_under_a_second_issuer_is_linked_as_history(connect_app_db) -> None:
+    conn = connect_app_db()
+    fake = FakeSec()
+    _list_shared(fake, nbis=False)
+    ingest_sec_filings(_run(conn), conn, sec=fake.client())
+    ingest_sec_filings(_run(conn), conn, sec=fake.client())  # NVDA's shared filing is now old news
+    _list_shared(fake, nvda=False)
+
+    third = _run(conn)
+    result = ingest_sec_filings(third, conn, sec=fake.client())
+
+    assert result.inserted_count == 0
+    assert result.meta["issuers"][NBIS_CIK]["linked"] == 1
+    assert _links(conn)[(SHARED["accessionNumber"], NBIS_CIK)] == (True, third.id)
+
+
 def test_force_refresh_retries_failed_identities(connect_app_db) -> None:
     conn = connect_app_db()
     fake = FakeSec()

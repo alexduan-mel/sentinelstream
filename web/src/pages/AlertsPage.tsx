@@ -48,10 +48,12 @@ const columns: TableColumnsType<Filing> = [
   },
   {
     title: "Ticker",
-    dataIndex: "ticker",
+    dataIndex: "tickers",
     width: 90,
-    render: (ticker: string | null, filing) =>
-      ticker ?? (
+    render: (tickers: string[], filing) =>
+      tickers.length > 0 ? (
+        tickers.join(", ")
+      ) : (
         <span title={`CIK ${filing.cik}`}>
           <Muted>{EMPTY}</Muted>
         </span>

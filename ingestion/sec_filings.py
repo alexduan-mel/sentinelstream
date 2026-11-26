@@ -6,11 +6,13 @@ New in this repo (the prototype never stored filings). Each run:
    A symbol SEC cannot match is marked ``onboarding_status = 'failed'`` with the reason, and is not
    retried until a run with ``force_refresh``.
 2. Fetches each issuer's submissions record once (share classes share a CIK) and upserts the recent
-   filings by accession number, so reruns only add what is new.
+   filings by accession number, so reruns only add what is new. Each filing is also linked to every
+   watchlist issuer whose submissions list it (``filing_issuers``, ADR 0007): a filing can name
+   several issuers, and the alert belongs to each of them.
 
 ``known_at`` is EDGAR's acceptance time, which the submissions API gives in UTC (ADR 0006). An
-issuer's first poll records its existing filings with ``is_backfill = TRUE``, so alerting (M1) can
-tell history from news.
+issuer's first poll records its existing filings and links with ``is_backfill = TRUE``, so alerting
+(M1) can tell history from news.
 """
 
 from __future__ import annotations
@@ -162,11 +164,21 @@ def _record_identity_failure(conn: Connection, instrument_id: int, message: str)
     conn.commit()
 
 
-def upsert_filings(conn: Connection, records: list[FilingRecord], *, is_backfill: bool, task_run_id: int) -> int:
-    """Insert filings not seen before and commit; returns how many were new. Existing rows are kept
-    as first recorded, so ``first_seen_at`` stays the time the poller first saw the filing."""
+def upsert_filings(
+    conn: Connection, records: list[FilingRecord], *, is_backfill: bool, task_run_id: int
+) -> tuple[int, int]:
+    """Store filings and link them to the issuer whose submissions listed them, then commit.
+
+    Returns (new filings, new links). Existing rows are kept as first recorded, so ``first_seen_at``
+    stays the time the poller first saw each filing and each link (ADR 0004, ADR 0007).
+
+    A new link is backfill when the run is, or when the filing was already stored before this run:
+    an old filing that turns out to be shared with a second watchlist issuer is history for it, not
+    news. A filing first stored earlier in this same run (say, as history for an issuer polled for
+    the first time) is still news for an issuer that was already being watched.
+    """
     if not records:
-        return 0
+        return 0, 0
     rows = [
         (
             r.accession_no,
@@ -197,13 +209,29 @@ def upsert_filings(conn: Connection, records: list[FilingRecord], *, is_backfill
             rows,
             fetch=True,
         )
+        linked = execute_values(
+            cursor,
+            """
+            INSERT INTO filing_issuers (accession_no, cik, is_backfill, task_run_id)
+            SELECT f.accession_no, v.cik, v.is_backfill OR f.task_run_id IS DISTINCT FROM v.task_run_id,
+                   v.task_run_id
+            FROM (VALUES %s) AS v (accession_no, cik, is_backfill, task_run_id)
+            JOIN filings f ON f.accession_no = v.accession_no
+            ON CONFLICT (accession_no, cik) DO NOTHING
+            RETURNING accession_no
+            """,
+            [(r.accession_no, r.cik, is_backfill, task_run_id) for r in records],
+            template="(%s, %s, %s::boolean, %s::bigint)",
+            fetch=True,
+        )
     conn.commit()
-    return len(inserted)
+    return len(inserted), len(linked)
 
 
 def _has_filings(conn: Connection, cik: str) -> bool:
+    """True once any filing is linked to this issuer, so its next poll is not treated as history."""
     with conn.cursor() as cursor:
-        cursor.execute("SELECT EXISTS (SELECT 1 FROM filings WHERE cik = %s)", (cik,))
+        cursor.execute("SELECT EXISTS (SELECT 1 FROM filing_issuers WHERE cik = %s)", (cik,))
         found = bool(cursor.fetchone()[0])
     conn.commit()
     return found
@@ -285,11 +313,17 @@ def ingest_sec_filings(run: TaskRun, conn: Connection, *, sec: SecClient | None 
                 off_hours += len(late_night)
                 LOGGER.warning("sec_acceptance_outside_edgar_hours cik=%s count=%d", cik, len(late_night))
             is_backfill = run.run_mode == "backfill" or not _has_filings(conn, cik)
-            new = upsert_filings(conn, records, is_backfill=is_backfill, task_run_id=run.id)
+            new, linked = upsert_filings(conn, records, is_backfill=is_backfill, task_run_id=run.id)
             fetched += len(records)
             inserted += new
             meta["invalid_rows"] += invalid
-            meta["issuers"][cik] = {"symbols": symbols, "fetched": len(records), "new": new, "backfill": is_backfill}
+            meta["issuers"][cik] = {
+                "symbols": symbols,
+                "fetched": len(records),
+                "new": new,
+                "linked": linked,
+                "backfill": is_backfill,
+            }
     finally:
         if sec is None:
             client.close()

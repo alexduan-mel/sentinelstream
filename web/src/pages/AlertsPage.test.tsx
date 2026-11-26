@@ -16,7 +16,7 @@ afterEach(() => {
 const earnings: Filing = {
   accession_no: "0001045810-26-000001",
   cik: "0001045810",
-  ticker: "NVDA",
+  tickers: ["NVDA"],
   form_type: "8-K",
   items: [
     { number: "2.02", title: "Results of Operations and Financial Condition" },
@@ -31,7 +31,7 @@ const earnings: Filing = {
 const form4: Filing = {
   accession_no: "0001018724-26-000002",
   cik: "0001018724",
-  ticker: "AMZN",
+  tickers: ["AMZN"],
   form_type: "4",
   items: [],
   accepted_at: "2026-11-21T04:30:00Z",
@@ -105,6 +105,19 @@ describe("AlertsPage", () => {
     const form4Row = screen.getByText("AMZN").closest("tr") as HTMLElement;
     expect(within(form4Row).queryByText(/^Item/)).toBeNull();
     expect(screen.getByRole("heading", { name: "Alerts · 2" })).toBeTruthy();
+  });
+
+  it("shows every issuer a shared filing is listed under, and a dash when none is known", async () => {
+    const shared: Filing = { ...earnings, tickers: ["AMZN", "NVDA"] };
+    const unknown: Filing = { ...form4, accession_no: "0000000001-26-000003", tickers: [] };
+    mockApi({ items: [shared, unknown], total: 2 });
+    render(<AlertsPage />);
+
+    expect(await screen.findByText("AMZN, NVDA")).toBeTruthy();
+    const unknownRow = screen
+      .getByRole("link", { name: /0000000001-26-000003/ })
+      .closest("tr") as HTMLElement;
+    expect(within(unknownRow).getByTitle(`CIK ${form4.cik}`)).toBeTruthy();
   });
 
   it("never shows materiality or push columns before M1", async () => {
