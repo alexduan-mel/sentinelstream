@@ -11,6 +11,7 @@ from tests.form4_xml import form4, owner, transaction
 
 AMZN = "0001018724"
 NVDA = "0001045810"
+NBIS = "0001513845"
 
 # --- Form 4 XML ------------------------------------------------------------------------------------
 
@@ -130,18 +131,24 @@ def test_form4_is_low_for_a_watchlist_company_that_is_only_a_reporting_owner() -
     assert result.reason == "Form 4 for issuer CIK 0001234567; this company is a reporting owner"
 
 
-def test_foreign_private_issuers_have_no_high_rule_in_v0() -> None:
-    assert classify("6-K", [], "foreign_private", "0001513845").level == "low"
-    assert classify("8-K", ["2.02"], "foreign_private", "0001513845").reason == (
+def test_foreign_private_issuers_have_no_high_current_report_rule_in_v0() -> None:
+    assert classify("6-K", [], "foreign_private", NBIS).level == "low"
+    assert classify("8-K", ["2.02"], "foreign_private", NBIS).reason == (
         "8-K: no high rule for foreign private issuers in v0"
     )
     assert classify("8-K", ["2.02"], None, NVDA).reason == "8-K: issuer filer type unknown"
 
 
-def test_only_domestic_form4s_need_their_xml() -> None:
-    assert needs_form4("4", "domestic")
-    assert not needs_form4("4", "foreign_private")
-    assert not needs_form4("4/A", "domestic")
-    assert not needs_form4("8-K", "domestic")
+def test_the_form4_rule_applies_to_every_filer_type() -> None:
+    # Nebius files 20-F and 6-K, but its insiders have filed Form 4 since March 2026.
+    purchase = parse_form4(form4(NBIS, transaction("P", "500", "120")))
+    for filer_type in ("domestic", "foreign_private", None):
+        assert classify("4", [], filer_type, NBIS, purchase).level == "high"
+
+
+def test_only_form4s_need_their_xml() -> None:
+    assert needs_form4("4")
+    assert not needs_form4("4/A")
+    assert not needs_form4("8-K")
     with pytest.raises(ValueError, match="needs its parsed XML"):
-        classify("4", [], "domestic", AMZN)
+        classify("4", [], "foreign_private", AMZN)
