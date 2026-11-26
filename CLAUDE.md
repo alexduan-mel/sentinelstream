@@ -12,7 +12,7 @@ M1 is done when every box is ticked:
 
 - [x] SEC poller runs automatically every 5 minutes (forward migration, not an edit to `001_baseline.sql`)
 - [x] Filing-to-issuer link: a filing listed in several watchlist issuers' submissions is linked to each of them, so alerts route to the subject company
-- [ ] Materiality rules v0, branching on filer type: 8-K items 1.01, 2.02, 4.02 and 5.02, plus Form 4 open-market purchases (code P, read from the Form 4 XML), are high; everything else is low
+- [x] Materiality rules v0, branching on filer type: 8-K items 1.01, 2.02, 4.02 and 5.02, plus Form 4 open-market purchases (code P, read from the Form 4 XML), are high; everything else is low
 - [ ] Slack notifier behind a notifier interface: high items only, a link to the filing, deduplicated by accession number; the webhook URL lives in SSM Parameter Store
 - [ ] Alerts page shows materiality, Slack delivery and when the poller last ran
 - [ ] Failed runs emit the `task_run_failed` log line that the existing CloudWatch alarm watches

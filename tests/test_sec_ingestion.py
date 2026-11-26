@@ -21,6 +21,7 @@ from ingestion.sec_filings import (
 )
 from ingestion.sec_identity import IdentityError, detect_filer_type, resolve_issuer
 from orchestration.task_runs import TaskRun, enqueue_run
+from tests.form4_xml import form4, transaction
 
 UA = "SentinelStream tests@example.com"
 NVDA_CIK = "0001045810"
@@ -75,6 +76,10 @@ class FakeSec:
             "/files/company_tickers_exchange.json": TICKER_MAP,
             f"/submissions/CIK{NVDA_CIK}.json": _submissions("NVIDIA CORP", ["NVDA"], NVDA_FILINGS),
             f"/submissions/CIK{NBIS_CIK}.json": _submissions("Nebius Group N.V.", ["NBIS"], NBIS_FILINGS),
+            # The raw XML of NVDA_FILINGS' Form 4: a sale, so low.
+            "/Archives/edgar/data/1045810/000104581026000099/form4.xml": httpx.Response(
+                200, content=form4(NVDA_CIK, transaction("S", "1000", "180.5", ad="D"))
+            ),
             "/submissions/CIK0009999999.json": _submissions(
                 "Example Fund Trust",
                 ["ANT"],
@@ -137,6 +142,26 @@ def test_client_errors_are_clear() -> None:
 
 
 # --- normalisation ---------------------------------------------------------------------------------
+
+
+def test_archive_file_fetches_from_the_filing_folder_and_rejects_odd_names() -> None:
+    fake = FakeSec()
+    client = fake.client()
+
+    body = client.archive_file(NVDA_CIK, "0001045810-26-000099", "form4.xml")
+
+    assert b"<ownershipDocument>" in body
+    assert str(fake.requests[-1].url) == (
+        "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000099/form4.xml"
+    )
+    assert fake.requests[-1].headers["User-Agent"] == UA
+    for name in ("../form4.xml", "a/b.xml", ""):
+        with pytest.raises(ValueError):
+            client.archive_file(NVDA_CIK, "0001045810-26-000099", name)
+    with pytest.raises(ValueError):
+        client.archive_file(NVDA_CIK, "000104581026000099", "form4.xml")
+    with pytest.raises(SecError, match="404"):
+        client.archive_file(NVDA_CIK, "0001045810-26-000098", "form4.xml")
 
 
 def test_acceptance_time_z_is_utc() -> None:

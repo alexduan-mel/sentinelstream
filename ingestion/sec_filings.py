@@ -9,6 +9,8 @@ New in this repo (the prototype never stored filings). Each run:
    filings by accession number, so reruns only add what is new. Each filing is also linked to every
    watchlist issuer whose submissions list it (``filing_issuers``, ADR 0007): a filing can name
    several issuers, and the alert belongs to each of them.
+3. Classifies each new link high or low with the materiality rules (``alerts``, ADR 0008), fetching
+   a Form 4's XML when the rule needs it.
 
 ``known_at`` is EDGAR's acceptance time, which the submissions API gives in UTC (ADR 0006). An
 issuer's first poll records its existing filings and links with ``is_backfill = TRUE``, so alerting
@@ -26,6 +28,7 @@ from typing import Any
 from psycopg2.extensions import connection as Connection
 from psycopg2.extras import execute_values
 
+from alerts.classify import classify_links
 from ingestion.market_calendar import NEW_YORK
 from ingestion.sec_client import SecClient, SecError
 from ingestion.sec_identity import IdentityError, Issuer, resolve_issuer
@@ -324,6 +327,16 @@ def ingest_sec_filings(run: TaskRun, conn: Connection, *, sec: SecClient | None 
                 "linked": linked,
                 "backfill": is_backfill,
             }
+
+        # 3. Materiality for every link not yet classified (ADR 0008).
+        stats = classify_links(conn, client)
+        meta["materiality"] = stats.as_meta()
+        if stats.errors:
+            meta["materiality"]["errors"] = stats.errors[:10]
+        if stats.news_failed:
+            attempted += 1
+            failed += 1
+            meta["errors"].append(f"{stats.news_failed} new Form 4(s) could not be fetched; retried next run")
     finally:
         if sec is None:
             client.close()
