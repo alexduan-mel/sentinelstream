@@ -2,10 +2,12 @@
 
 SentinelStream is a personal research assistant for a long-horizon US stock investor. It watches SEC EDGAR for new filings from the companies on a watchlist and flags the material ones. It explains each filing from the filing itself, with numbers taken from XBRL rather than from a model. It shows what has historically followed similar events, and it keeps a decision ledger measured against QQQ. It is a single-user tool that runs as a small, monitored production system on AWS: every merge to `main` is tested, built and deployed automatically, the infrastructure is defined in Terraform, and no credentials are stored in the repo or in CI. It makes no trades and gives no buy or sell recommendations. The full spec is in [`docs/PRD.md`](docs/PRD.md).
 
-![Tasks page: task definitions and run history](docs/screenshots/tasks.png)
+![Alerts page: SEC filings for the watchlist, newest first, with 8-K items and their titles](docs/screenshots/alerts.png)
 
 <details>
-<summary>More screenshots: a run expanded, and Sign in</summary>
+<summary>More screenshots: Tasks, a run expanded, and Sign in</summary>
+
+![Tasks page: task definitions and run history](docs/screenshots/tasks.png)
 
 ![A run expanded: trace ID, per-issuer meta and Run again](docs/screenshots/tasks-expanded.png)
 
