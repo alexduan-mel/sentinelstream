@@ -16,6 +16,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from alerts.display_time import DisplayTimezoneError, display_timezone
 from api.db import DbConn
 from filings.edgar import sec_index_url
 from filings.form_8k import item_title
@@ -69,16 +70,17 @@ def filing_items(form_type: str, numbers: list[str]) -> list[FilingItem]:
     return [FilingItem(number=number, title=item_title(number) if titled else None) for number in numbers]
 
 
-# Filters shared by the count and the page. Dates are US Eastern calendar days, as the UI shows them.
+# Filters shared by the count and the page. Dates are calendar days in the display time zone, as the UI
+# shows them.
 _WHERE = """
     WHERE (cardinality(%(tickers)s::text[]) = 0 OR f.accession_no IN (
               SELECT l.accession_no FROM filing_issuers l JOIN instruments i ON i.cik = l.cik
               WHERE i.symbol = ANY(%(tickers)s::text[])))
       AND (cardinality(%(form_types)s::text[]) = 0 OR f.form_type = ANY(%(form_types)s::text[]))
       AND (%(accepted_from)s::date IS NULL
-           OR f.accepted_at >= %(accepted_from)s::date::timestamp AT TIME ZONE 'America/New_York')
+           OR f.accepted_at >= %(accepted_from)s::date::timestamp AT TIME ZONE %(zone)s)
       AND (%(accepted_to)s::date IS NULL
-           OR f.accepted_at < (%(accepted_to)s::date + 1)::timestamp AT TIME ZONE 'America/New_York')
+           OR f.accepted_at < (%(accepted_to)s::date + 1)::timestamp AT TIME ZONE %(zone)s)
       AND (%(materiality)s::text IS NULL
            OR (%(materiality)s = 'high' AND EXISTS (
                   SELECT 1 FROM filing_issuers l WHERE l.accession_no = f.accession_no AND l.materiality = 'high'))
@@ -99,16 +101,21 @@ def list_filings(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> FilingPage:
-    """Filings newest first by EDGAR acceptance, filtered by ticker, form type, accepted date (ET) and
-    materiality."""
+    """Filings newest first by EDGAR acceptance, filtered by ticker, form type, accepted date (in the
+    display time zone) and materiality."""
     if accepted_from and accepted_to and accepted_from > accepted_to:
         raise HTTPException(status_code=422, detail="accepted_from is after accepted_to")
+    try:
+        zone = display_timezone().key
+    except DisplayTimezoneError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
     params: dict[str, Any] = {
         "tickers": [symbol.strip().upper() for symbol in ticker or [] if symbol.strip()],
         "form_types": [form.strip() for form in form_type or [] if form.strip()],
         "accepted_from": accepted_from,
         "accepted_to": accepted_to,
         "materiality": materiality,
+        "zone": zone,
         "limit": limit,
         "offset": offset,
     }

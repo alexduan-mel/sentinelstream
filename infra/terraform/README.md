@@ -80,6 +80,12 @@ High alerts go to Slack through an incoming webhook ([ADR 0009](../../docs/decis
 aws ssm put-parameter --name /sentinelstream/SLACK_WEBHOOK_URL --type SecureString --value "https://hooks.slack.com/services/..."
 ```
 
+Times in the UI and in Slack are shown in US Eastern unless `DISPLAY_TIMEZONE` names another IANA zone (daylight saving is followed):
+
+```sh
+aws ssm put-parameter --name /sentinelstream/DISPLAY_TIMEZONE --type String --value "<IANA zone, e.g. Europe/London>"
+```
+
 ## Reaching the host and UI
 
 No inbound ports are open. Use Session Manager:

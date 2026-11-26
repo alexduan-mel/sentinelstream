@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
@@ -12,6 +13,9 @@ from alerts.notifier import Alert, AlertIssuer, NotifierConfigError, NotifierErr
 from alerts.slack import SlackNotifier, format_message, webhook_url_from_env
 from ingestion.http import Pacer
 from tests.test_http_and_calendar import FakeClock
+
+# The real classmethod, taken before conftest's autouse fixture swaps in a recording notifier.
+REAL_FROM_ENV = SlackNotifier.__dict__["from_env"]
 
 WEBHOOK = "https://hooks.slack.com/services/T000/B000/not-a-real-secret"
 SEC_URL = "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000123/0001045810-26-000123-index.htm"
@@ -52,6 +56,18 @@ def test_webhook_url_must_be_set_and_be_a_slack_webhook(monkeypatch) -> None:
     assert webhook_url_from_env() == WEBHOOK
 
 
+def test_from_env_rejects_a_bad_display_time_zone_as_configuration(monkeypatch) -> None:
+    monkeypatch.setattr(SlackNotifier, "from_env", REAL_FROM_ENV)
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", WEBHOOK)
+    monkeypatch.setenv("DISPLAY_TIMEZONE", "Mars/Olympus")
+    with pytest.raises(NotifierConfigError, match="DISPLAY_TIMEZONE"):
+        SlackNotifier.from_env()
+
+    monkeypatch.setenv("DISPLAY_TIMEZONE", "Australia/Melbourne")
+    notifier = SlackNotifier.from_env()
+    notifier.close()
+
+
 # --- message ---------------------------------------------------------------------------------------
 
 
@@ -61,6 +77,11 @@ def test_message_names_tickers_form_reason_time_and_links_the_filing() -> None:
         "Item 2.02 Results of Operations and Financial Condition\n"
         f"Accepted Nov 26, 16:05 ET · <{SEC_URL}|Filing on SEC>"
     )
+
+
+def test_message_time_is_in_the_display_zone_with_us_eastern_alongside() -> None:
+    text = format_message(_alert(), ZoneInfo("Australia/Melbourne"))
+    assert text.splitlines()[-1] == (f"Accepted Nov 27, 08:05 AEDT (Nov 26, 16:05 ET) · <{SEC_URL}|Filing on SEC>")
 
 
 def test_a_filing_for_two_issuers_is_one_message_with_shared_reasons_once() -> None:
