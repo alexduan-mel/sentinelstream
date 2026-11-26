@@ -58,6 +58,11 @@ def _db_now(conn) -> datetime:
     return now
 
 
+def _failed_lines(caplog) -> list[str]:
+    """The lines the CloudWatch metric filter counts: any containing ``task_run_failed``."""
+    return [r.getMessage() for r in caplog.records if "task_run_failed" in r.getMessage()]
+
+
 def _lock_is_free(conn, task_id: str) -> bool:
     name = locks.task_lock_name(task_id)
     free = locks.try_lock(conn, name)
@@ -191,6 +196,25 @@ def test_finish_records_outcome_and_releases_the_lock(connect_app_db) -> None:
     assert _lock_is_free(other, TASK)
 
 
+def test_a_failed_run_logs_one_alarm_line_and_other_endings_none(connect_app_db, caplog) -> None:
+    conn = connect_app_db()
+    caplog.set_level("INFO", logger="orchestration.task_runs")
+    for status in ("succeeded", "partial", "skipped"):
+        _enqueue(conn)
+        finish_run(conn, claim_next_run(conn, worker_instance="w").run, RunResult(status=status))
+    assert _failed_lines(caplog) == []
+
+    run_id = _enqueue(conn)
+    claim = claim_next_run(conn, worker_instance="w")
+    finish_run(conn, claim.run, RunResult(status="failed", error_message="SecError: boom\nsecond line"))
+
+    assert _failed_lines(caplog) == [
+        f"task_run_failed run_id={run_id} task_id={TASK} ended_by=worker error=SecError: boom second line"
+    ]
+    record = next(r for r in caplog.records if "task_run_failed" in r.getMessage())
+    assert record.levelname == "ERROR"
+
+
 def test_finish_rejects_non_terminal_status(connect_app_db) -> None:
     conn = connect_app_db()
     _enqueue(conn)
@@ -213,6 +237,21 @@ def test_finish_does_not_overwrite_a_reconciled_run(connect_app_db) -> None:
 
     assert finish_run(conn, claim.run, RunResult(status="succeeded")) is False
     assert _run(conn, run_id)["error"] == "reconciled"
+
+
+def test_a_failed_finish_after_reconciliation_is_not_logged_twice(connect_app_db, caplog) -> None:
+    conn = connect_app_db()
+    run_id = _enqueue(conn)
+    claim = claim_next_run(conn, worker_instance="w")
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "UPDATE task_runs SET status = 'failed', error_message = 'reconciled', completed_at = NOW() WHERE id = %s",
+            (run_id,),
+        )
+    conn.commit()
+
+    assert finish_run(conn, claim.run, RunResult(status="failed", error_message="late")) is False
+    assert _failed_lines(caplog) == []
     assert _lock_is_free(connect_app_db(), TASK)
 
 
@@ -222,7 +261,7 @@ PENDING_TIMEOUT = timedelta(hours=1)
 GRACE = timedelta(seconds=60)
 
 
-def test_reconcile_fails_runs_nobody_claimed(connect_app_db) -> None:
+def test_reconcile_fails_runs_nobody_claimed(connect_app_db, caplog) -> None:
     conn = connect_app_db()
     old = _enqueue(conn)
     fresh = _enqueue(conn, OTHER_TASK)
@@ -236,9 +275,12 @@ def test_reconcile_fails_runs_nobody_claimed(connect_app_db) -> None:
     assert _run(conn, old)["status"] == "failed"
     assert _run(conn, old)["error"] == "not claimed by a worker within 3600 s"
     assert _run(conn, fresh)["status"] == "pending"
+    assert _failed_lines(caplog) == [
+        f"task_run_failed run_id={old} task_id={TASK} ended_by=scheduler error=not claimed by a worker within 3600 s"
+    ]
 
 
-def test_reconcile_fails_a_run_whose_worker_died(connect_app_db) -> None:
+def test_reconcile_fails_a_run_whose_worker_died(connect_app_db, caplog) -> None:
     scheduler, worker = connect_app_db(), connect_app_db()
     run_id = _enqueue(worker)
     claim_next_run(worker, worker_instance="w")
@@ -251,10 +293,14 @@ def test_reconcile_fails_a_run_whose_worker_died(connect_app_db) -> None:
     row = _run(scheduler, run_id)
     assert row["status"] == "failed"
     assert row["error"] == "worker stopped before the run finished"
+    assert _failed_lines(caplog) == [
+        f"task_run_failed run_id={run_id} task_id={TASK} ended_by=scheduler "
+        "error=worker stopped before the run finished"
+    ]
     assert _lock_is_free(connect_app_db(), TASK)  # the reconciler released its own hold
 
 
-def test_reconcile_leaves_live_and_recent_runs_alone(connect_app_db) -> None:
+def test_reconcile_leaves_live_and_recent_runs_alone(connect_app_db, caplog) -> None:
     scheduler, worker, dead_worker = connect_app_db(), connect_app_db(), connect_app_db()
     live = _enqueue(worker, TASK)
     claim_next_run(worker, worker_instance="live")
@@ -266,6 +312,7 @@ def test_reconcile_leaves_live_and_recent_runs_alone(connect_app_db) -> None:
     counts = reconcile_runs(scheduler, _db_now(scheduler), pending_timeout=PENDING_TIMEOUT, running_grace=GRACE)
 
     assert counts == {"pending_timed_out": 0, "running_abandoned": 0}
+    assert _failed_lines(caplog) == []
     assert _run(scheduler, live)["status"] == "running"
     assert _run(scheduler, recent)["status"] == "running"
     later = _db_now(scheduler) + timedelta(minutes=5)

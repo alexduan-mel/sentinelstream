@@ -83,7 +83,7 @@ def test_worker_runs_the_handler_on_its_own_connection(connect_app_db) -> None:
     assert process_next(control, handlers={TASK: handler}, connect=connect_app_db, instance="w") is False
 
 
-def test_handler_exception_fails_the_run_and_frees_the_task(connect_app_db) -> None:
+def test_handler_exception_fails_the_run_and_frees_the_task(connect_app_db, caplog) -> None:
     control = connect_app_db()
     run_id = _enqueue(control)
 
@@ -93,6 +93,11 @@ def test_handler_exception_fails_the_run_and_frees_the_task(connect_app_db) -> N
     process_next(control, handlers={TASK: handler}, connect=connect_app_db, instance="w")
 
     assert _status(control, run_id) == ("failed", "RuntimeError: SEC returned 503 after 5 retries")
+    # The line the CloudWatch alarm counts, once.
+    assert [r.getMessage() for r in caplog.records if "task_run_failed" in r.getMessage()] == [
+        f"task_run_failed run_id={run_id} task_id={TASK} ended_by=worker "
+        "error=RuntimeError: SEC returned 503 after 5 retries"
+    ]
     # The next run of the same task is not blocked.
     next_id = _enqueue(control)
     process_next(control, handlers={TASK: lambda run, conn: RunResult()}, connect=connect_app_db, instance="w")

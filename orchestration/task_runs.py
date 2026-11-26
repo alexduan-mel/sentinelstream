@@ -210,6 +210,17 @@ def claim_next_run(conn: Connection, *, worker_instance: str) -> Claim | None:
     return Claim(run_id, task_id, run)
 
 
+def log_run_failed(run_id: int, task_id: str, ended_by: str, error: str | None) -> None:
+    """The one ``task_run_failed`` line per failed run, which the CloudWatch alarm counts.
+
+    Written where a run is recorded as failed: by the worker when a handler fails, or by the
+    scheduler's reconciliation when no process will finish the run. Kept to a single line, so the
+    log driver ships it as one event.
+    """
+    detail = " ".join((_truncate(error) or "-").split())
+    LOGGER.error("task_run_failed run_id=%d task_id=%s ended_by=%s error=%s", run_id, task_id, ended_by, detail)
+
+
 def finish_run(conn: Connection, run: TaskRun, result: RunResult) -> bool:
     """Record a claimed run's outcome, commit, and release its task lock.
 
@@ -255,7 +266,10 @@ def finish_run(conn: Connection, run: TaskRun, result: RunResult) -> bool:
         _truncate(result.error_message) or "-",
     )
     if not updated:
+        # Reconciliation already failed the run and logged it.
         LOGGER.warning("task_run_finish_ignored run_id=%d reason=no_longer_running", run.id)
+    elif result.status == "failed":
+        log_run_failed(run.id, run.task_id, "worker", result.error_message)
     return updated
 
 
@@ -280,6 +294,7 @@ def reconcile_runs(
                 SET status = 'failed', completed_at = %(now)s, updated_at = %(now)s,
                     error_message = COALESCE(error_message, %(message)s)
                 WHERE status = 'pending' AND created_at < %(cutoff)s
+                RETURNING id, task_id, error_message
                 """,
                 {
                     "now": now,
@@ -287,8 +302,11 @@ def reconcile_runs(
                     "message": f"not claimed by a worker within {int(pending_timeout.total_seconds())} s",
                 },
             )
-            counts["pending_timed_out"] = cursor.rowcount
+            timed_out = cursor.fetchall()
+            counts["pending_timed_out"] = len(timed_out)
             conn.commit()
+            for run_id, task_id, error in timed_out:
+                log_run_failed(run_id, task_id, "scheduler", error)
 
             cursor.execute(
                 "SELECT id, task_id FROM task_runs WHERE status = 'running' AND started_at < %s ORDER BY id",
@@ -310,11 +328,15 @@ def reconcile_runs(
                         SET status = 'failed', completed_at = %s, updated_at = %s,
                             error_message = COALESCE(error_message, 'worker stopped before the run finished')
                         WHERE id = %s AND status = 'running'
+                        RETURNING error_message
                         """,
                         (now, now, run_id),
                     )
-                    counts["running_abandoned"] += cursor.rowcount
+                    abandoned = cursor.fetchone()
                 conn.commit()
+                if abandoned is not None:
+                    counts["running_abandoned"] += 1
+                    log_run_failed(run_id, task_id, "scheduler", abandoned[0])
             finally:
                 conn.rollback()
                 locks.unlock(conn, name)
