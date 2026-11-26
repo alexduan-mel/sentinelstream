@@ -204,7 +204,7 @@ def test_manual_and_disabled_tasks_are_never_scheduled(connect_app_db) -> None:
     past = datetime(2026, 1, 1, tzinfo=UTC)
     with conn.cursor() as cursor:
         cursor.execute("UPDATE task_definitions SET next_run_at = %s", (past,))
-        cursor.execute("UPDATE task_definitions SET trigger_mode = 'manual' WHERE task_id = %s", (OTHER_TASK,))
+        cursor.execute("UPDATE task_definitions SET trigger_mode = 'manual' WHERE task_id <> %s", (TASK,))
         cursor.execute(
             "UPDATE task_definitions SET trigger_mode = 'automatic', enabled = FALSE WHERE task_id = %s", (TASK,)
         )

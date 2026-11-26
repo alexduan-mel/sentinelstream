@@ -286,6 +286,26 @@ def _run(conn, *, tickers: list[str] | None = None, force_refresh: bool = False,
     )
 
 
+# What onboarding records for the two issuers the fake SEC knows (ingestion.onboarding).
+WATCHED = {
+    "NVDA": (NVDA_CIK, "NVIDIA CORP", "domestic"),
+    "NBIS": (NBIS_CIK, "Nebius Group N.V.", "foreign_private"),
+}
+
+
+def _watch(conn, *symbols: str, status: str = "backfilling") -> None:
+    """Put seeded tickers in the poller's watch set, as onboarding would."""
+    with conn.cursor() as cursor:
+        for symbol in symbols or tuple(WATCHED):
+            cik, name, filer_type = WATCHED[symbol]
+            cursor.execute(
+                "UPDATE instruments SET cik = %s, name = %s, filer_type = %s, onboarding_status = %s "
+                "WHERE symbol = %s",
+                (cik, name, filer_type, status, symbol),
+            )
+    conn.commit()
+
+
 def _instrument(conn, symbol: str) -> tuple:
     with conn.cursor() as cursor:
         cursor.execute(
@@ -309,26 +329,16 @@ def _filings(conn) -> list[tuple]:
     return rows
 
 
-def test_first_poll_resolves_identities_and_records_history_as_backfill(connect_app_db) -> None:
+def test_first_poll_records_history_as_backfill(connect_app_db) -> None:
     conn = connect_app_db()
+    _watch(conn)
     fake = FakeSec()
     run = _run(conn)
 
     result = ingest_sec_filings(run, conn, sec=fake.client())
 
-    # Seeded watchlist: NVDA, NBIS resolve; SPCX is not in the map; ANT belongs to a fund; GOOGL and
-    # AMZN are not in this fake map either.
-    assert result.status == "partial"
+    assert result.status == "succeeded"
     assert (result.fetched_count, result.inserted_count, result.deduped_count) == (5, 5, 0)
-    assert {r["symbol"] for r in result.meta["resolved"]} == {"NVDA", "NBIS"}
-    assert {u["symbol"] for u in result.meta["unresolved"]} == {"AMZN", "ANT", "GOOGL", "SPCX"}
-    assert "files as a fund (485BPOS)" in result.error_message
-
-    assert _instrument(conn, "NVDA") == (NVDA_CIK, "NVIDIA CORP", "Nasdaq", "domestic", "pending", None)
-    assert _instrument(conn, "NBIS")[3] == "foreign_private"
-    assert _instrument(conn, "SPCX")[4:] == ("failed", "SPCX is not in SEC's ticker map")
-    assert _instrument(conn, "QQQ")[0] is None  # benchmarks are not SEC-polled
-
     rows = _filings(conn)
     assert len(rows) == 5
     assert all(row[6] is True and row[7] == run.id for row in rows)
@@ -336,13 +346,33 @@ def test_first_poll_resolves_identities_and_records_history_as_backfill(connect_
     assert eight_k[2:4] == ("8-K", ["2.02", "9.01"])
     assert eight_k[4] == eight_k[5] == datetime(2026, 11, 19, 21, 5, 12, tzinfo=UTC)
 
-    # The ticker map is fetched once, and each resolved issuer's submissions only once.
-    assert fake.paths().count("/files/company_tickers_exchange.json") == 1
+    # Onboarding owns identity: the poller never reads the ticker map, and reads each issuer once.
+    assert "/files/company_tickers_exchange.json" not in fake.paths()
     assert fake.paths().count(f"/submissions/CIK{NVDA_CIK}.json") == 1
 
 
-def test_later_polls_add_only_new_filings_and_skip_unresolved_symbols(connect_app_db) -> None:
+def test_only_tickers_onboarding_has_identified_are_polled(connect_app_db) -> None:
     conn = connect_app_db()
+    _watch(conn, "NBIS", status="ready")
+    with conn.cursor() as cursor:
+        # NVDA has an identity but was removed from the watchlist; the rest have none yet.
+        cursor.execute(
+            "UPDATE instruments SET cik = %s, filer_type = 'domestic', onboarding_status = 'ready', active = FALSE "
+            "WHERE symbol = 'NVDA'",
+            (NVDA_CIK,),
+        )
+    conn.commit()
+    fake = FakeSec()
+
+    result = ingest_sec_filings(_run(conn), conn, sec=fake.client())
+
+    assert set(result.meta["issuers"]) == {NBIS_CIK}
+    assert fake.paths() == [f"/submissions/CIK{NBIS_CIK}.json"]
+
+
+def test_later_polls_add_only_new_filings(connect_app_db) -> None:
+    conn = connect_app_db()
+    _watch(conn)
     fake = FakeSec()
     ingest_sec_filings(_run(conn), conn, sec=fake.client())
     fake.requests.clear()
@@ -355,9 +385,6 @@ def test_later_polls_add_only_new_filings_and_skip_unresolved_symbols(connect_ap
     assert result.status == "succeeded"
     assert result.error_message is None
     assert (result.fetched_count, result.inserted_count, result.deduped_count) == (6, 1, 5)
-    # Unresolved symbols are not looked up again, so the ticker map is not fetched.
-    assert "/files/company_tickers_exchange.json" not in fake.paths()
-    assert {u["symbol"] for u in result.meta["unresolved"]} == {"AMZN", "ANT", "GOOGL", "SPCX"}
 
     rows = {row[0]: row for row in _filings(conn)}
     assert rows["0001045810-26-000102"][6:] == (False, second.id)
@@ -387,6 +414,7 @@ def _list_shared(fake: FakeSec, *, nvda: bool = True, nbis: bool = True) -> None
 
 def test_every_poll_links_filings_to_the_issuer_that_lists_them(connect_app_db) -> None:
     conn = connect_app_db()
+    _watch(conn)
     fake = FakeSec()
     first = _run(conn)
     result = ingest_sec_filings(first, conn, sec=fake.client())
@@ -405,6 +433,7 @@ def test_every_poll_links_filings_to_the_issuer_that_lists_them(connect_app_db) 
 
 def test_a_new_filing_listed_under_two_watched_issuers_is_news_for_both(connect_app_db) -> None:
     conn = connect_app_db()
+    _watch(conn)
     fake = FakeSec()
     ingest_sec_filings(_run(conn), conn, sec=fake.client())
     _list_shared(fake)
@@ -422,6 +451,7 @@ def test_a_new_filing_listed_under_two_watched_issuers_is_news_for_both(connect_
 
 def test_history_for_a_new_issuer_is_still_news_for_one_already_watched(connect_app_db) -> None:
     conn = connect_app_db()
+    _watch(conn)
     fake = FakeSec()
     ingest_sec_filings(_run(conn, tickers=["NBIS"]), conn, sec=fake.client())
     _list_shared(fake)
@@ -437,6 +467,7 @@ def test_history_for_a_new_issuer_is_still_news_for_one_already_watched(connect_
 
 def test_an_old_filing_found_under_a_second_issuer_is_linked_as_history(connect_app_db) -> None:
     conn = connect_app_db()
+    _watch(conn)
     fake = FakeSec()
     _list_shared(fake, nbis=False)
     ingest_sec_filings(_run(conn), conn, sec=fake.client())
@@ -451,43 +482,25 @@ def test_an_old_filing_found_under_a_second_issuer_is_linked_as_history(connect_
     assert _links(conn)[(SHARED["accessionNumber"], NBIS_CIK)] == (True, third.id)
 
 
-def test_force_refresh_retries_failed_identities(connect_app_db) -> None:
-    conn = connect_app_db()
-    fake = FakeSec()
-    ingest_sec_filings(_run(conn, tickers=["SPCX"]), conn, sec=fake.client())
-    assert _instrument(conn, "SPCX")[4] == "failed"
-
-    fake.routes["/files/company_tickers_exchange.json"] = {
-        "fields": TICKER_MAP["fields"],
-        # A fictional issuer, so the test asserts nothing about the real SPCX.
-        "data": [*TICKER_MAP["data"], [1234567, "Example Space Co", "SPCX", "Nasdaq"]],
-    }
-    fake.routes["/submissions/CIK0001234567.json"] = _submissions("Example Space Co", ["SPCX"], [])
-
-    assert ingest_sec_filings(_run(conn, tickers=["SPCX"]), conn, sec=fake.client()).status == "succeeded"
-    assert _instrument(conn, "SPCX")[4] == "failed"  # not retried without force_refresh
-
-    result = ingest_sec_filings(_run(conn, tickers=["SPCX"], force_refresh=True), conn, sec=fake.client())
-    assert result.status == "succeeded"
-    assert _instrument(conn, "SPCX")[:1] + _instrument(conn, "SPCX")[4:] == ("0001234567", "pending", None)
-
-
 def test_an_unreachable_sec_fails_the_run_without_marking_instruments(connect_app_db) -> None:
     conn = connect_app_db()
+    _watch(conn)
     fake = FakeSec()
-    fake.routes["/files/company_tickers_exchange.json"] = httpx.Response(503)
+    fake.routes[f"/submissions/CIK{NVDA_CIK}.json"] = httpx.Response(503)
+    fake.routes[f"/submissions/CIK{NBIS_CIK}.json"] = httpx.Response(503)
 
     result = ingest_sec_filings(_run(conn, tickers=["NVDA", "NBIS"]), conn, sec=fake.client())
 
     assert result.status == "failed"
     assert "HTTP 503" in result.error_message
-    assert _instrument(conn, "NVDA")[4:] == ("pending", None)
+    assert _instrument(conn, "NVDA")[4:] == ("backfilling", None)
 
 
 def test_backfill_runs_mark_filings_as_backfill_and_missing_user_agent_fails_clearly(
     connect_app_db, monkeypatch
 ) -> None:
     conn = connect_app_db()
+    _watch(conn)
     fake = FakeSec()
     ingest_sec_filings(_run(conn, tickers=["NVDA"]), conn, sec=fake.client())
     newer = _filing("0001045810-26-000103", "8-K", "2026-11-24T14:00:00.000Z", filed="2026-11-24")
@@ -503,6 +516,7 @@ def test_backfill_runs_mark_filings_as_backfill_and_missing_user_agent_fails_cle
 
 def test_acceptance_times_in_the_future_are_flagged(connect_app_db) -> None:
     conn = connect_app_db()
+    _watch(conn)
     fake = FakeSec()
     later = (datetime.now(UTC) + timedelta(hours=2)).replace(tzinfo=None).isoformat(timespec="seconds") + ".000Z"
     future = _filing("0001045810-26-000104", "8-K", later, filed=date.today().isoformat())
@@ -514,6 +528,7 @@ def test_acceptance_times_in_the_future_are_flagged(connect_app_db) -> None:
 
 def test_acceptance_times_outside_edgar_hours_are_flagged(connect_app_db) -> None:
     conn = connect_app_db()
+    _watch(conn)
     fake = FakeSec()
     in_hours = _filing("0001045810-26-000105", "8-K", "2026-11-24T21:05:00.000Z", filed="2026-11-24")  # 16:05 ET
     late = _filing("0001045810-26-000106", "4", "2026-11-25T04:30:00.000Z", filed="2026-11-24")  # 23:30 ET

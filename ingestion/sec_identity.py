@@ -1,8 +1,7 @@
 """Resolve a watchlist symbol to its SEC issuer: CIK, name, exchange and filer type.
 
-All of it comes from SEC data, never from hand-written seeds. This is steps 1 and 2 of the M1
-ticker-onboarding job, run by the filings poller for now so the seeded watchlist can be polled in M0.
-The onboarding job will call the same functions.
+All of it comes from SEC data, never from hand-written seeds. The ticker-onboarding job
+(``ingestion.onboarding``) calls these for every new watchlist equity.
 """
 
 from __future__ import annotations
