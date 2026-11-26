@@ -405,9 +405,12 @@ def test_acceptance_times_outside_edgar_hours_are_flagged(connect_app_db) -> Non
     fake = FakeSec()
     in_hours = _filing("0001045810-26-000105", "8-K", "2026-11-24T21:05:00.000Z", filed="2026-11-24")  # 16:05 ET
     late = _filing("0001045810-26-000106", "4", "2026-11-25T04:30:00.000Z", filed="2026-11-24")  # 23:30 ET
-    fake.routes[f"/submissions/CIK{NVDA_CIK}.json"] = _submissions("NVIDIA CORP", ["NVDA"], [in_hours, late])
+    # SEC issues EFFECT notices in its own overnight batch, so 00:15 ET is expected for them.
+    effect = _filing("9999999995-26-000107", "EFFECT", "2026-11-25T05:15:00.000Z", filed="2026-11-25")
+    fake.routes[f"/submissions/CIK{NVDA_CIK}.json"] = _submissions("NVIDIA CORP", ["NVDA"], [in_hours, late, effect])
 
     result = ingest_sec_filings(_run(conn, tickers=["NVDA"]), conn, sec=fake.client())
 
     assert result.meta["acceptance_outside_edgar_hours"] == 1
+    assert result.meta["issuers"][NVDA_CIK]["new"] == 3  # flagged, not dropped
     assert "future_acceptance" not in result.meta
