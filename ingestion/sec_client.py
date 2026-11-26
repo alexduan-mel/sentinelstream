@@ -24,6 +24,7 @@ from ingestion.http import RETRY_STATUSES, Pacer, send_with_retries
 
 TICKER_MAP_URL = "https://www.sec.gov/files/company_tickers_exchange.json"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
+ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{folder}/{name}"
 REQUESTS_PER_SECOND = 5
 MAX_RESPONSE_BYTES = 20_000_000
 TIMEOUT = httpx.Timeout(20.0, connect=5.0)
@@ -32,6 +33,8 @@ SHARED_PACER = Pacer(1.0 / REQUESTS_PER_SECOND)
 
 _EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 _CIK = re.compile(r"^[0-9]{10}$")
+_ACCESSION = re.compile(r"^[0-9]{10}-[0-9]{2}-[0-9]{6}$")
+_ARCHIVE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$")
 
 
 class SecConfigurationError(RuntimeError):
@@ -87,6 +90,13 @@ class SecClient:
         self._http.close()
 
     def get_json(self, url: str) -> Any:
+        response = self._get(url)
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise SecError(f"SEC response for {url} is not JSON") from exc
+
+    def _get(self, url: str) -> httpx.Response:
         response = send_with_retries(
             lambda: self._http.get(url),
             pacer=self._pacer,
@@ -101,10 +111,18 @@ class SecClient:
             raise SecError(f"SEC request failed: HTTP {response.status_code} for {url}{hint}")
         if len(response.content) > MAX_RESPONSE_BYTES:
             raise SecError(f"SEC response for {url} exceeds {MAX_RESPONSE_BYTES} bytes")
-        try:
-            return response.json()
-        except ValueError as exc:
-            raise SecError(f"SEC response for {url} is not JSON") from exc
+        return response
+
+    def archive_file(self, cik: str, accession_no: str, name: str) -> bytes:
+        """One file from a filing's EDGAR Archives folder, for example a Form 4's ownership XML."""
+        if not _CIK.match(cik):
+            raise ValueError(f"CIK must be 10 digits, got {cik!r}")
+        if not _ACCESSION.match(accession_no):
+            raise ValueError(f"not an accession number: {accession_no!r}")
+        if not _ARCHIVE_NAME.match(name) or ".." in name:
+            raise ValueError(f"not a plain file name: {name!r}")
+        url = ARCHIVE_URL.format(cik=int(cik), folder=accession_no.replace("-", ""), name=name)
+        return self._get(url).content
 
     def ticker_map(self) -> list[dict[str, Any]]:
         """SEC's ticker → CIK map, one dict per row (``cik``, ``name``, ``ticker``, ``exchange``)."""
