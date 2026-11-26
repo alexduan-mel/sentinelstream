@@ -254,6 +254,21 @@ def test_prices_start_at_the_listing_and_bars_of_an_earlier_security_are_dropped
     assert "/2026-06-12/2026-11-25" in aggs.url.path
 
 
+def test_benchmarks_are_named_from_massive_and_equities_keep_secs_name(connect_app_db) -> None:
+    conn = connect_app_db()
+    sec, massive = _fake_sec(), FakeMassive()
+    massive.details["QQQ"] = {"ticker": "QQQ", "name": "Invesco QQQ Trust, Series 1", "list_date": "1999-03-10"}
+    massive.details["NVDA"] = {"ticker": "NVDA", "name": "Nvidia Corp", "cik": "0001045810", "list_date": "1999-01-22"}
+
+    _onboard(conn, sec, massive, tickers=["QQQ", "NVDA"])
+
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT symbol, name FROM instruments WHERE symbol IN ('QQQ', 'NVDA', 'SPY') ORDER BY symbol")
+        names = dict(cursor.fetchall())
+    conn.rollback()
+    assert names == {"NVDA": "NVIDIA CORP", "QQQ": "Invesco QQQ Trust, Series 1", "SPY": None}
+
+
 def test_a_symbol_massive_ties_to_another_company_loads_no_prices(connect_app_db) -> None:
     conn = connect_app_db()
     sec, massive = _fake_sec(), FakeMassive()
