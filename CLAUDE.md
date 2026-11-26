@@ -4,19 +4,23 @@ SentinelStream (SS) is a personal research assistant for a long-horizon US stock
 
 Read `docs/PRD.md` for the full product spec and milestones. This file is the working agreement for anyone (human or agent) writing code here.
 
-## Current milestone: M0, showcase repo on AWS (target: week of 23 Nov 2026)
+## Current milestone: M1, alerts live (30 Nov – 13 Dec 2026)
 
-Done when every box is ticked:
+M0 (showcase repo on AWS) is done: CI with gitleaks, Terraform stage 1, auto-deploy to EC2, scheduler and worker, SEC and price ingestion, sign-in, Tasks and a read-only Alerts list.
 
-- [x] Repo skeleton in the target layout below, with `.env.example` and a `.gitignore` that excludes every `.env*` except the example
-- [x] CI on GitHub Actions: pytest, Vitest, Ruff, Black check, ESLint, and **gitleaks** on every push and PR
-- [x] Single baseline schema migration (the prototype's 35 migrations collapsed into `001_baseline.sql`), run by the locked migration runner
-- [x] Core prototype modules carried over and running under Docker Compose: orchestration (scheduler, `task_runs`, locks, dispatch), ingestion (SEC client, Massive bars), migrations runner, minimal web UI with the task-runs view
-- [x] Terraform for stage-1 AWS (us-east-1): ECR, EC2 t4g.micro, IAM role for GitHub OIDC, SSM (Run Command + Parameter Store), CloudWatch Logs + one alarm, S3 bucket, AWS Budgets alarm
-- [x] Deploy job: merge to `main` → build images → push to ECR (tagged by commit SHA) → SSM Run Command pulls and restarts Compose on EC2
-- [x] README with a one-paragraph pitch, architecture diagram (Mermaid), screenshots, and a "Scope and roadmap" section
+M1 is done when every box is ticked:
 
-Next milestone after M0 is **M1: Alerts live** (see `docs/PRD.md`). Don't start M1 work until M0 is done.
+- [ ] SEC poller runs automatically every 5 minutes (forward migration, not an edit to `001_baseline.sql`)
+- [ ] Filing-to-issuer link: a filing listed in several watchlist issuers' submissions is linked to each of them, so alerts route to the subject company
+- [ ] Materiality rules v0, branching on filer type: 8-K items 1.01, 2.02, 4.02 and 5.02, plus Form 4 open-market purchases (code P, read from the Form 4 XML), are high; everything else is low
+- [ ] Slack notifier behind a notifier interface: high items only, a link to the filing, deduplicated by accession number; the webhook URL lives in SSM Parameter Store
+- [ ] Alerts page shows materiality, Slack delivery and when the poller last ran
+- [ ] Failed runs emit the `task_run_failed` log line that the existing CloudWatch alarm watches
+- [ ] Ticker onboarding job (pending → backfilling → ready) and the Watchlist page
+- [ ] Alert detail page
+- [ ] A real 8-K from a watchlist company reaches Slack within 10 minutes of EDGAR acceptance, checked from stored acceptance and delivery times
+
+Next milestone after M1 is **M2: Evidence harness** (see `docs/PRD.md`). Don't start M2 work until M1 is done.
 
 ## Architecture (stage 1)
 
