@@ -24,6 +24,8 @@ from ingestion.http import RETRY_STATUSES, Pacer, send_with_retries
 
 TICKER_MAP_URL = "https://www.sec.gov/files/company_tickers_exchange.json"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
+SUBMISSIONS_PAGE_URL = "https://data.sec.gov/submissions/{name}"
+COMPANY_FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
 ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{folder}/{name}"
 REQUESTS_PER_SECOND = 5
 MAX_RESPONSE_BYTES = 20_000_000
@@ -35,6 +37,7 @@ _EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 _CIK = re.compile(r"^[0-9]{10}$")
 _ACCESSION = re.compile(r"^[0-9]{10}-[0-9]{2}-[0-9]{6}$")
 _ARCHIVE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$")
+_SUBMISSIONS_PAGE = re.compile(r"^CIK[0-9]{10}-submissions-[0-9]{3}\.json$")
 
 
 class SecConfigurationError(RuntimeError):
@@ -43,6 +46,10 @@ class SecConfigurationError(RuntimeError):
 
 class SecError(RuntimeError):
     pass
+
+
+class SecNotFoundError(SecError):
+    """SEC answered 404: the document does not exist."""
 
 
 def user_agent_from_env() -> str:
@@ -105,7 +112,7 @@ class SecClient:
             describe=f"sec {httpx.URL(url).path}",
         )
         if response.status_code == 404:
-            raise SecError(f"SEC returned 404 for {url}")
+            raise SecNotFoundError(f"SEC returned 404 for {url}")
         if not 200 <= response.status_code < 300:
             hint = " (check SEC_USER_AGENT and SEC fair-access limits)" if response.status_code in (403, 429) else ""
             raise SecError(f"SEC request failed: HTTP {response.status_code} for {url}{hint}")
@@ -140,4 +147,29 @@ class SecClient:
         payload = self.get_json(SUBMISSIONS_URL.format(cik=cik))
         if not isinstance(payload, dict):
             raise SecError(f"SEC submissions for CIK {cik} has an unexpected shape")
+        return payload
+
+    def submissions_page(self, name: str) -> dict[str, Any]:
+        """An older page of an issuer's filings, named in ``filings.files`` of its submissions record.
+
+        A page holds the same columns as the record's ``recent`` block, at its top level.
+        """
+        if not _SUBMISSIONS_PAGE.match(name):
+            raise ValueError(f"not a submissions page name: {name!r}")
+        payload = self.get_json(SUBMISSIONS_PAGE_URL.format(name=name))
+        if not isinstance(payload, dict):
+            raise SecError(f"SEC submissions page {name} has an unexpected shape")
+        return payload
+
+    def company_facts(self, cik: str) -> dict[str, Any] | None:
+        """Every XBRL fact the issuer has filed, by taxonomy and concept; None if it has filed none."""
+        if not _CIK.match(cik):
+            raise ValueError(f"CIK must be 10 digits, got {cik!r}")
+        url = COMPANY_FACTS_URL.format(cik=cik)
+        try:
+            payload = self.get_json(url)
+        except SecNotFoundError:
+            return None  # a company that has not filed XBRL yet, such as a recent IPO
+        if not isinstance(payload, dict):
+            raise SecError(f"SEC company facts for CIK {cik} have an unexpected shape")
         return payload
