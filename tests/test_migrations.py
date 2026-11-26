@@ -145,6 +145,39 @@ def test_003_runs_the_sec_poller_automatically_every_5_minutes(connect_test_db, 
     assert rows[0][:2] == ("ingest_prices", "manual")  # untouched
 
 
+def test_004_links_each_stored_filing_to_its_issuer(connect_test_db, migrations_dir: Path) -> None:
+    conn = connect_test_db()
+    for name in ("002_acceptance_times_utc.sql", "003_sec_poller_every_5_min.sql"):
+        shutil.copy(DEFAULT_DIRECTORY / name, migrations_dir)
+    run_migrations(conn, migrations_dir)
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            INSERT INTO sentinel_stream.filings
+              (accession_no, cik, form_type, filed_date, accepted_at, known_at, is_backfill, first_seen_at)
+            VALUES ('0001045810-26-000001', '0001045810', '8-K', '2026-11-20', '2026-11-20 21:05:00+00',
+                    '2026-11-20 21:05:00+00', TRUE, '2026-11-21 00:00:00+00'),
+                   ('0001045810-26-000002', '0001045810', '4', '2026-11-24', '2026-11-24 23:00:00+00',
+                    '2026-11-24 23:00:00+00', FALSE, '2026-11-24 23:05:00+00')
+            """)
+    conn.commit()
+
+    shutil.copy(DEFAULT_DIRECTORY / "004_filing_issuers.sql", migrations_dir)
+    assert run_migrations(conn, migrations_dir) == ["004_filing_issuers.sql"]
+
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT accession_no, cik, is_backfill, first_seen_at = (
+                SELECT first_seen_at FROM sentinel_stream.filings f WHERE f.accession_no = l.accession_no)
+            FROM sentinel_stream.filing_issuers l ORDER BY accession_no
+            """)
+        rows = cursor.fetchall()
+    conn.rollback()
+    assert rows == [
+        ("0001045810-26-000001", "0001045810", True, True),
+        ("0001045810-26-000002", "0001045810", False, True),
+    ]
+
+
 def test_skips_applied_files(connect_test_db, migrations_dir: Path) -> None:
     # Not idempotent on purpose: running 002 a second time would fail on CREATE TABLE.
     _write(migrations_dir, "002_probe.sql", "CREATE TABLE probe (id INT);\n" + _record("002_probe.sql", 2))
