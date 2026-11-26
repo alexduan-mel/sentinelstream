@@ -89,12 +89,12 @@ Data: `filings` plus the M1 materiality and notification records.
 
 ### Watchlist (`/watchlist`, M1)
 
-Data: `instruments`, plus the onboarding task run for instruments that are not ready.
+Data: `instruments` with their onboarding status (ADR 0010), newest filing and price coverage.
 
-- An "Add ticker" input and button at the top. Validation errors appear inline next to it ("XYZQ: not found on any US exchange"). Adding a ticker creates a pending instrument and queues onboarding.
-- **Tracked** table: Ticker · Name · Filer type (Domestic / Foreign private) · CIK (mono) · Onboarding (Pending / Backfilling / Ready / Failed) · Last filing (form plus relative time) · "Remove" as a text action with a confirmation. Remove sets `active = false` and keeps history.
-- A backfilling row shows a compact Ant Design `Steps`: Validate → Map CIK → Filings (2y) → Prices (2y) → XBRL. A failed row shows `onboarding_error`.
-- **Benchmarks** table (QQQ, SPY): Ticker · Name · Price history ("Ready · 2y daily · updated Nov 24 18:30 ET"). Benchmarks cannot be removed.
+- An "Add ticker" input (what is typed is uppercased) and button at the top. Problems the API sees at once appear inline next to it ("NVDA is already on the watchlist", a malformed symbol, a benchmark). Adding a ticker creates a pending instrument and queues onboarding. Whether SEC knows the symbol is checked by the onboarding job, so an unknown symbol shows a few seconds later as a Failed row with SEC's reason ("XYZQ is not in SEC's ticker map").
+- **Tracked** table: Ticker · Name · Filer type (Domestic / Foreign private) · CIK (mono) · Onboarding (Pending grey / Backfilling accent / Ready muted green / Failed red) · Last filing (form plus time) · actions. Under the status, one truncated line gives `onboarding_error` (red for Failed, amber for a transient error while Backfilling), with the full text on hover. "Retry" appears for Failed rows and rows with an error. "Remove" is a neutral text action with a confirmation; it sets `active = false` and keeps history.
+- No per-step progress: `instruments` records the status, not the step in progress, and a ticker takes seconds. The page refreshes every 5 seconds while any ticker is pending or backfilling.
+- **Benchmarks** table (QQQ, SPY): Ticker · Name (from Massive; an ETF has no SEC issuer) · Price history (status, then "501 daily bars · Nov 26, 2024 – Nov 25, 2026"). Benchmarks cannot be removed.
 
 ### Alert detail (`/alerts/:accession`, M1)
 

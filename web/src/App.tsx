@@ -5,6 +5,7 @@ import { RequireAuth } from "./auth/RequireAuth";
 import { AlertsPage } from "./pages/AlertsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { TasksPage } from "./pages/TasksPage";
+import { WatchlistPage } from "./pages/WatchlistPage";
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route element={<RequireAuth />}>
           <Route path="/" element={<AlertsPage />} />
+          <Route path="/watchlist" element={<WatchlistPage />} />
           <Route path="/tasks" element={<TasksPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
