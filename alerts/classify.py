@@ -72,7 +72,7 @@ class _Filing:
 
     @property
     def needs_form4(self) -> bool:
-        return any(needs_form4(self.form_type, link.filer_type) for link in self.links)
+        return needs_form4(self.form_type)
 
 
 def _unclassified(conn: Connection) -> list[_Filing]:
@@ -185,7 +185,7 @@ def classify_links(conn: Connection, client: SecClient, *, backfill_form4_budget
 
         results: dict[str, Materiality] = {}
         for link in filing.links:
-            if unreadable is not None and needs_form4(filing.form_type, link.filer_type):
+            if unreadable is not None:
                 results[link.cik] = Materiality("low", f"Form 4 XML unreadable: {unreadable}")
             else:
                 results[link.cik] = classify(filing.form_type, filing.items, link.filer_type, link.cik, form4)

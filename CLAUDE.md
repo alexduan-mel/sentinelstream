@@ -83,7 +83,7 @@ The private prototype (`sentinelstream-prototype`) has working code. **Copy and 
 ## Product decisions already made
 
 - **Watchlist seed:** NVDA, SPCX (SpaceX), ANT (Anthropic), GOOGL (Alphabet), AMZN, NBIS (Nebius). More tickers are added later through the onboarding job.
-- **Filer types differ.** Domestic filers produce 10-K, 10-Q, 8-K and Form 4. Foreign private issuers (NBIS) produce 20-F and 6-K and no Form 4. Alert rules must branch on filer type.
+- **Filer types differ.** Domestic filers produce 10-K, 10-Q, 8-K and Form 4. Foreign private issuers (NBIS) produce 20-F and 6-K, and their insiders are usually exempt from Form 4 (but NBIS insiders have filed Forms 3 and 4 since March 2026). Current-report alert rules (8-K against 6-K) branch on filer type; the Form 4 rule applies to every filer type (ADR 0008).
 - **Benchmark:** QQQ, with SPY shown for reference.
 - **AWS:** new account, Free plan, region us-east-1.
 - **Alerts:** Slack incoming webhook. Keep the notifier behind an interface so email or Telegram can be added later.
