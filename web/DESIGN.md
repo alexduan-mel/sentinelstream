@@ -78,7 +78,7 @@ Data: `task_definitions`, `task_runs`.
 
 ### Alerts (`/`, list in M0, materiality in M1)
 
-Until M1 the page is a read-only list of stored filings: Accepted · Ticker · Form · Item · "SEC ↗", filtered by ticker, form type and accepted date (ET). Item shows each 8-K item number with its title from Form 8-K, one per line; other forms leave it blank. Each filing shows one ticker for its CIK until M1 links filings to every issuer they name. Materiality, Pushed and the poll line arrive with M1.
+Built in M1 except Alert detail. Item shows each 8-K item number with its title from Form 8-K, one per line, and for a high Form 4 the shares bought ("Open-market purchase · 12,400 sh"). A filing linked to several watchlist issuers shows each ticker. Materiality is High if the rules flag it for any linked issuer, and a dash until the filing is classified; hovering the tag shows the rule's reason. Pushed shows the Slack time once delivered, "Queued" while waiting (hover for the last error), and a dash otherwise (hover for why a skipped alert was not pushed). The poll line reads "Polls every 5 min · last ran 2m ago · next in 3m" and refreshes every minute.
 
 Data: `filings` plus the M1 materiality and notification records.
 
