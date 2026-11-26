@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from api.filings import filing_items, sec_index_url
+from api.filings import filing_items
+from filings.edgar import sec_index_url
 from filings.form_8k import ITEM_TITLES, item_title
 
 NVDA_CIK = "0001045810"
