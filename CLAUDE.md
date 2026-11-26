@@ -16,7 +16,7 @@ M1 is done when every box is ticked:
 - [x] Slack notifier behind a notifier interface: high items only, a link to the filing, deduplicated by accession number; the webhook URL lives in SSM Parameter Store
 - [x] Alerts page shows materiality, Slack delivery and when the poller last ran
 - [x] Failed runs emit the `task_run_failed` log line that the existing CloudWatch alarm watches
-- [ ] Ticker onboarding job (pending → backfilling → ready) and the Watchlist page
+- [x] Ticker onboarding job (pending → backfilling → ready) and the Watchlist page
 - [ ] Alert detail page
 - [ ] A real 8-K from a watchlist company reaches Slack within 10 minutes of EDGAR acceptance, checked from stored acceptance and delivery times
 
