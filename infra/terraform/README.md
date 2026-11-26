@@ -74,6 +74,12 @@ aws ssm put-parameter --name /sentinelstream/SEC_USER_AGENT  --type String      
 aws ssm put-parameter --name /sentinelstream/MASSIVE_API_KEY --type SecureString --value "<your Massive API key>"
 ```
 
+High alerts go to Slack through an incoming webhook ([ADR 0009](../../docs/decisions/0009-slack-notifier.md)). Until it is set, a poll that has a high alert to send ends `partial` and the alert stays queued. The URL lets anyone post to the channel, so store it as a SecureString and redeploy:
+
+```sh
+aws ssm put-parameter --name /sentinelstream/SLACK_WEBHOOK_URL --type SecureString --value "https://hooks.slack.com/services/..."
+```
+
 ## Reaching the host and UI
 
 No inbound ports are open. Use Session Manager:

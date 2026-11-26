@@ -243,6 +243,45 @@ def test_007_requeues_only_foreign_form4s_marked_low_without_reading(connect_tes
     ]
 
 
+def test_008_marks_highs_already_classified_as_skipped_for_slack(connect_test_db, migrations_dir: Path) -> None:
+    conn = connect_test_db()
+    for path in DEFAULT_DIRECTORY.glob("00[2-7]_*.sql"):
+        shutil.copy(path, migrations_dir)
+    run_migrations(conn, migrations_dir)
+    links = [
+        ("0002130357-26-000001", "0002130357", False, "high"),  # news, high: stale for Slack now
+        ("0002130357-26-000001", "0001513845", False, "high"),  # same filing, second issuer
+        ("0001045810-26-000002", "0001045810", True, "high"),  # history
+        ("0001045810-26-000003", "0001045810", False, "low"),
+    ]
+    with conn.cursor() as cursor:
+        for accession in sorted({link[0] for link in links}):
+            cursor.execute(
+                "INSERT INTO sentinel_stream.filings (accession_no, cik, form_type, filed_date, accepted_at, known_at) "
+                "VALUES (%s, %s, '8-K', '2026-11-25', '2026-11-25 21:10+00', '2026-11-25 21:10+00')",
+                (accession, accession[:10]),
+            )
+        for accession, cik, is_backfill, level in links:
+            cursor.execute(
+                "INSERT INTO sentinel_stream.filing_issuers "
+                "(accession_no, cik, is_backfill, materiality, materiality_reason, classified_at) "
+                "VALUES (%s, %s, %s, %s, 'test', NOW())",
+                (accession, cik, is_backfill, level),
+            )
+    conn.commit()
+
+    shutil.copy(DEFAULT_DIRECTORY / "008_alert_deliveries.sql", migrations_dir)
+    assert run_migrations(conn, migrations_dir) == ["008_alert_deliveries.sql"]
+
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT accession_no, channel, status, skip_reason FROM sentinel_stream.alert_deliveries")
+        result = cursor.fetchall()
+    conn.rollback()
+    assert result == [
+        ("0002130357-26-000001", "slack", "skipped", "classified before the Slack notifier was switched on")
+    ]
+
+
 def test_skips_applied_files(connect_test_db, migrations_dir: Path) -> None:
     # Not idempotent on purpose: running 002 a second time would fail on CREATE TABLE.
     _write(migrations_dir, "002_probe.sql", "CREATE TABLE probe (id INT);\n" + _record("002_probe.sql", 2))

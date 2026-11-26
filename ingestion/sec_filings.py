@@ -11,6 +11,7 @@ New in this repo (the prototype never stored filings). Each run:
    several issuers, and the alert belongs to each of them.
 3. Classifies each new link high or low with the materiality rules (``alerts``, ADR 0008), fetching
    a Form 4's XML when the rule needs it.
+4. Pushes each new high filing to Slack, once per accession number (``alerts.deliver``, ADR 0009).
 
 ``known_at`` is EDGAR's acceptance time, which the submissions API gives in UTC (ADR 0006). An
 issuer's first poll records its existing filings and links with ``is_backfill = TRUE``, so alerting
@@ -28,7 +29,10 @@ from typing import Any
 from psycopg2.extensions import connection as Connection
 from psycopg2.extras import execute_values
 
+from alerts import slack
 from alerts.classify import classify_links
+from alerts.deliver import deliver_alerts
+from alerts.notifier import Notifier
 from ingestion.market_calendar import NEW_YORK
 from ingestion.sec_client import SecClient, SecError
 from ingestion.sec_identity import IdentityError, Issuer, resolve_issuer
@@ -240,7 +244,9 @@ def _has_filings(conn: Connection, cik: str) -> bool:
     return found
 
 
-def ingest_sec_filings(run: TaskRun, conn: Connection, *, sec: SecClient | None = None) -> RunResult:
+def ingest_sec_filings(
+    run: TaskRun, conn: Connection, *, sec: SecClient | None = None, notifier: Notifier | None = None
+) -> RunResult:
     instruments = _watch_instruments(conn, run.tickers)
     meta: dict[str, Any] = {"resolved": [], "unresolved": [], "errors": [], "issuers": {}, "invalid_rows": 0}
     if run.tickers:
@@ -340,6 +346,19 @@ def ingest_sec_filings(run: TaskRun, conn: Connection, *, sec: SecClient | None 
     finally:
         if sec is None:
             client.close()
+
+    # 4. Slack for high news, deduplicated by accession number (ADR 0009).
+    delivery = deliver_alerts(
+        conn,
+        channel=slack.CHANNEL,
+        make_notifier=slack.SlackNotifier.from_env if notifier is None else lambda: notifier,
+        run_id=run.id,
+    )
+    meta["alerts"] = delivery.as_meta()
+    if delivery.errors:
+        attempted += 1
+        failed += 1
+        meta["errors"].extend(delivery.errors)
 
     if future_acceptance:
         meta["future_acceptance"] = future_acceptance

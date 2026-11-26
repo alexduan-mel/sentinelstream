@@ -78,7 +78,7 @@ docker compose up --build        # Postgres 16, then api (web UI on http://127.0
 curl http://127.0.0.1:8000/healthz
 ```
 
-Open http://127.0.0.1:8000 and sign in as `admin` with `AUTH_ADMIN_PASSWORD`. The first login stores a hash of that password. Ingestion runs need `SEC_USER_AGENT` (an application name and a contact email, as SEC requires) and `MASSIVE_API_KEY`. Without them a run fails with a clear configuration error. On EC2 all of these settings come from Parameter Store, and they are read at deploy time.
+Open http://127.0.0.1:8000 and sign in as `admin` with `AUTH_ADMIN_PASSWORD`. The first login stores a hash of that password. Ingestion runs need `SEC_USER_AGENT` (an application name and a contact email, as SEC requires) and `MASSIVE_API_KEY`. Without them a run fails with a clear configuration error. High alerts go to Slack through `SLACK_WEBHOOK_URL`; while it is empty, a poll with an alert to send ends `partial` and the alert waits. On EC2 all of these settings come from Parameter Store, and they are read at deploy time.
 
 Background work goes through `task_runs` ([ADR 0003](docs/decisions/0003-scheduler-and-worker.md)): the `scheduler` enqueues due tasks as pending runs, and the `worker` claims and executes them. Queue a run with **Run now** on the Tasks page, or from the command line:
 
