@@ -27,5 +27,5 @@ M1 pushes high filings ([ADR 0008](0008-materiality-rules-v0.md)) to Slack: one 
 ## Consequences
 
 - The `alert_delivered` log line records each delivery's latency, and `alert_deliveries` holds the stored times that the last M1 box is checked from.
-- Quiet hours are not handled in SS. Slack's own Do Not Disturb schedule holds notifications overnight; holding alerts here would break the 10-minute target, because EDGAR hours fall at night in Melbourne.
+- Quiet hours are not handled in SS. Slack's own Do Not Disturb schedule holds notifications overnight; holding alerts here would break the 10-minute target, because EDGAR's filing hours can fall overnight in the reader's time zone.
 - A filing that becomes high for a second issuer after its message went out is not sent again. With v0 rules this needs a co-registrant link that appears after delivery, which is rare.
