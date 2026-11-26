@@ -14,12 +14,13 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 
+from alerts.display_time import US_EASTERN, DisplayTimezoneError, display_timezone, format_clock
 from alerts.notifier import Alert, NotifierConfigError, NotifierError
 from ingestion.http import Pacer, send_with_retries
-from ingestion.market_calendar import NEW_YORK
 
 CHANNEL = "slack"
 WEBHOOK_PREFIX = "https://hooks.slack.com/"
@@ -44,26 +45,31 @@ def _escape(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _accepted(when: datetime) -> str:
-    local = when.astimezone(NEW_YORK)
-    return f"{local:%b} {local.day}, {local:%H:%M} ET"
+def _accepted(when: datetime, zone: ZoneInfo) -> str:
+    """In the display time zone, with US Eastern after it when that differs (the market's clock)."""
+    text = format_clock(when, zone)
+    if zone.key != US_EASTERN:
+        text += f" ({format_clock(when, ZoneInfo(US_EASTERN))})"
+    return text
 
 
-def format_message(alert: Alert) -> str:
+def format_message(alert: Alert, zone: ZoneInfo | None = None) -> str:
     """The alert as Slack mrkdwn: tickers, form and what matched, then the acceptance time and link.
 
-    Only facts from the filing and the rule that matched; no advice (ground rule 7).
+    Only facts from the filing and the rule that matched; no advice (ground rule 7). Times are in
+    ``zone`` (the notifier passes the display time zone), US Eastern if not given.
     """
     tickers = ", ".join(f"*{_escape(ticker)}*" for ticker in alert.tickers)
     form = "Form 4" if alert.form_type == "4" else alert.form_type
     lines = [f"{tickers} · {_escape(form)}"]
     lines.extend(_escape(reason) for reason in alert.reasons)
-    lines.append(f"Accepted {_accepted(alert.accepted_at)} · <{alert.sec_url}|Filing on SEC>")
+    accepted = _accepted(alert.accepted_at, zone or ZoneInfo(US_EASTERN))
+    lines.append(f"Accepted {accepted} · <{alert.sec_url}|Filing on SEC>")
     return "\n".join(lines)
 
 
-def payload(alert: Alert) -> dict[str, object]:
-    return {"text": format_message(alert), "unfurl_links": False, "unfurl_media": False}
+def payload(alert: Alert, zone: ZoneInfo | None = None) -> dict[str, object]:
+    return {"text": format_message(alert, zone), "unfurl_links": False, "unfurl_media": False}
 
 
 class SlackNotifier:
@@ -76,15 +82,22 @@ class SlackNotifier:
         transport: httpx.BaseTransport | None = None,
         pacer: Pacer = SHARED_PACER,
         base_delay: float = 1.0,
+        zone: ZoneInfo | None = None,
     ) -> None:
         self._url = webhook_url
+        self._zone = zone or ZoneInfo(US_EASTERN)
         self._pacer = pacer
         self._base_delay = base_delay
         self._http = httpx.Client(timeout=TIMEOUT, follow_redirects=False, transport=transport)
 
     @classmethod
     def from_env(cls) -> SlackNotifier:
-        return cls(webhook_url_from_env())
+        url = webhook_url_from_env()
+        try:
+            zone = display_timezone()
+        except DisplayTimezoneError as exc:
+            raise NotifierConfigError(str(exc)) from None
+        return cls(url, zone=zone)
 
     def close(self) -> None:
         self._http.close()
@@ -95,7 +108,7 @@ class SlackNotifier:
     def send(self, alert: Alert) -> None:
         try:
             response = send_with_retries(
-                lambda: self._http.post(self._url, json=payload(alert)),
+                lambda: self._http.post(self._url, json=payload(alert, self._zone)),
                 pacer=self._pacer,
                 base_delay=self._base_delay,
                 describe="slack_webhook",
