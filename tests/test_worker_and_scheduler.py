@@ -176,7 +176,7 @@ def test_newly_automatic_task_gets_a_next_run_but_does_not_run_yet(connect_app_d
 
     assert scheduler.schedule_due_tasks(conn, now) == []
 
-    assert _definition(conn, OTHER_TASK) == (now + timedelta(minutes=10), None)
+    assert _definition(conn, OTHER_TASK) == (now + timedelta(minutes=5), None)
     assert _pending(conn) == []
 
 
@@ -189,16 +189,17 @@ def test_due_task_is_enqueued_once_and_rescheduled(connect_app_db) -> None:
 
     assert len(created) == 1
     assert _pending(conn) == [(OTHER_TASK, "system_scheduler", "scheduled")]
-    assert _definition(conn, OTHER_TASK) == (now + timedelta(minutes=10), now)
+    assert _definition(conn, OTHER_TASK) == (now + timedelta(minutes=5), now)
     # Not due again until next_run_at: no catch-up burst.
-    assert scheduler.schedule_due_tasks(conn, now + timedelta(minutes=9)) == []
+    assert scheduler.schedule_due_tasks(conn, now + timedelta(minutes=4)) == []
 
 
 def test_manual_and_disabled_tasks_are_never_scheduled(connect_app_db) -> None:
     conn = connect_app_db()
     past = datetime(2026, 1, 1, tzinfo=UTC)
     with conn.cursor() as cursor:
-        cursor.execute("UPDATE task_definitions SET next_run_at = %s", (past,))  # both stay manual
+        cursor.execute("UPDATE task_definitions SET next_run_at = %s", (past,))
+        cursor.execute("UPDATE task_definitions SET trigger_mode = 'manual' WHERE task_id = %s", (OTHER_TASK,))
         cursor.execute(
             "UPDATE task_definitions SET trigger_mode = 'automatic', enabled = FALSE WHERE task_id = %s", (TASK,)
         )

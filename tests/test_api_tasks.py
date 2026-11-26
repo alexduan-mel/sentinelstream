@@ -55,8 +55,8 @@ def test_list_tasks_shows_seeded_definitions(signed_in_client) -> None:
         {
             "task_id": "ingest_sec_filings",
             "label": "Ingest SEC filings",
-            "schedule_label": "Every 10 min",
-            "trigger_mode": "manual",
+            "schedule_label": "Every 5 min",
+            "trigger_mode": "automatic",
             "enabled": True,
             "next_run_at": None,
             "last_run": None,

@@ -120,6 +120,31 @@ def test_002_reads_stored_acceptance_digits_as_utc(connect_test_db, migrations_d
     conn.rollback()
 
 
+def test_003_runs_the_sec_poller_automatically_every_5_minutes(connect_test_db, migrations_dir: Path) -> None:
+    conn = connect_test_db()
+    run_migrations(conn, migrations_dir)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "UPDATE sentinel_stream.task_definitions SET next_run_at = '2026-11-26T00:00:00Z' "
+            "WHERE task_id = 'ingest_sec_filings'"
+        )
+    conn.commit()
+
+    for name in ("002_acceptance_times_utc.sql", "003_sec_poller_every_5_min.sql"):
+        shutil.copy(DEFAULT_DIRECTORY / name, migrations_dir)
+    assert run_migrations(conn, migrations_dir) == ["002_acceptance_times_utc.sql", "003_sec_poller_every_5_min.sql"]
+
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT task_id, trigger_mode, schedule_type, interval_minutes, frequency, next_run_at
+            FROM sentinel_stream.task_definitions ORDER BY task_id
+            """)
+        rows = cursor.fetchall()
+    conn.rollback()
+    assert rows[1] == ("ingest_sec_filings", "automatic", "interval", 5, "Every 5 minutes", None)
+    assert rows[0][:2] == ("ingest_prices", "manual")  # untouched
+
+
 def test_skips_applied_files(connect_test_db, migrations_dir: Path) -> None:
     # Not idempotent on purpose: running 002 a second time would fail on CREATE TABLE.
     _write(migrations_dir, "002_probe.sql", "CREATE TABLE probe (id INT);\n" + _record("002_probe.sql", 2))
