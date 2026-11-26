@@ -198,16 +198,17 @@ describe("AlertsPage", () => {
     expect(
       within(purchase as HTMLElement).getByText("Open-market purchase · 12,400 sh")
     ).toBeTruthy();
-    const high = within(purchase as HTMLElement).getByText("High");
-    expect(high.closest("[title]")?.getAttribute("title")).toBe(form4.materiality_reason);
+    fireEvent.mouseEnter(within(purchase as HTMLElement).getByText("High"));
+    expect(await screen.findByText(form4.materiality_reason!)).toBeTruthy();
     expect(within(purchase as HTMLElement).getByTitle("2026-11-21T04:34:10Z")).toBeTruthy();
 
     const low = screen.getByRole("link", { name: /0001018724-26-000003/ }).closest("tr")!;
     expect(within(low as HTMLElement).getByText("Low")).toBeTruthy();
 
     const skipped = screen.getByText("NVDA").closest("tr") as HTMLElement;
+    fireEvent.mouseEnter(within(skipped).getByText("Skipped"));
     expect(
-      within(skipped).getByTitle("Not pushed: classified before the Slack notifier was switched on")
+      await screen.findByText("Not pushed: classified before the Slack notifier was switched on")
     ).toBeTruthy();
   });
 
@@ -229,9 +230,15 @@ describe("AlertsPage", () => {
     mockApi({ items: [queued, unclassified], total: 2 });
     render(<AlertsPage />);
 
-    expect(await screen.findByText("Queued")).toBeTruthy();
-    expect(screen.getByTitle("Slack answered HTTP 503: unavailable")).toBeTruthy();
-    expect(screen.getByTitle("Not classified yet")).toBeTruthy();
+    fireEvent.mouseEnter(await screen.findByText("Queued"));
+    expect(
+      await screen.findByText("Last attempt: Slack answered HTTP 503: unavailable")
+    ).toBeTruthy();
+    const unclassifiedRow = screen
+      .getByRole("link", { name: /0001018724-26-000009/ })
+      .closest("tr") as HTMLElement;
+    fireEvent.mouseEnter(within(unclassifiedRow).getAllByText("—")[0]);
+    expect(await screen.findByText("Not classified yet")).toBeTruthy();
   });
 
   it("filters by materiality and shows the poll line", async () => {

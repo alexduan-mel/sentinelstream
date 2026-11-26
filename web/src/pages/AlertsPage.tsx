@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   DatePicker,
   Segmented,
@@ -6,6 +6,7 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   type TableColumnsType
 } from "antd";
@@ -58,43 +59,51 @@ function Items({ filing }: { filing: Filing }) {
   );
 }
 
+/** Explains a cell on hover, straight away (a native title waits about a second). */
+function Hint({ text, children }: { text: string; children: ReactNode }) {
+  return (
+    <Tooltip title={text} mouseEnterDelay={0.05}>
+      <span className="cursor-help">{children}</span>
+    </Tooltip>
+  );
+}
+
 /** DESIGN.md, Alerts: `High` amber, `Low` neutral. The rule's reason shows on hover. */
 function MaterialityTag({ filing }: { filing: Filing }) {
   if (!filing.materiality) {
     return (
-      <span title="Not classified yet">
+      <Hint text="Not classified yet">
         <Muted>{EMPTY}</Muted>
-      </span>
+      </Hint>
     );
   }
   const high = filing.materiality === "high";
-  return (
-    <Tag
-      className="sentinel-tag"
-      color={high ? "warning" : "default"}
-      title={filing.materiality_reason ?? undefined}
-    >
+  const tag = (
+    <Tag className="sentinel-tag" color={high ? "warning" : "default"}>
       {high ? "High" : "Low"}
     </Tag>
   );
+  return filing.materiality_reason ? <Hint text={filing.materiality_reason}>{tag}</Hint> : tag;
 }
 
-/** The Slack time once delivered; "Queued" while waiting; a dash with the reason if never sent. */
+/** The Slack time once delivered; "Queued" while waiting; "Skipped" if it will never be sent. */
 function Pushed({ slack }: { slack: SlackDelivery | null }) {
   if (slack?.status === "delivered") return <Timestamp value={slack.delivered_at} />;
   if (slack?.status === "pending") {
     return (
-      <span title={slack.detail ?? "Sent on the next poll"}>
+      <Hint text={slack.detail ? `Last attempt: ${slack.detail}` : "Sent on the next poll"}>
         <Muted>Queued</Muted>
-      </span>
+      </Hint>
     );
   }
-  const reason = slack?.status === "skipped" ? `Not pushed: ${slack.detail ?? ""}` : undefined;
-  return (
-    <span title={reason}>
-      <Muted>{EMPTY}</Muted>
-    </span>
-  );
+  if (slack?.status === "skipped") {
+    return (
+      <Hint text={`Not pushed: ${slack.detail ?? "no reason recorded"}`}>
+        <Muted>Skipped</Muted>
+      </Hint>
+    );
+  }
+  return <Muted>{EMPTY}</Muted>;
 }
 
 const columns: TableColumnsType<Filing> = [
