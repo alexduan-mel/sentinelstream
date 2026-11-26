@@ -196,6 +196,15 @@ def test_filings_filter_by_ticker_form_and_eastern_date(signed_in_client, connec
     assert get(limit=10, offset=10) == {"items": [], "total": 4}
 
 
+def test_date_filters_use_the_zone_the_page_shows(signed_in_client, connect_app_db) -> None:
+    _seed(connect_app_db)
+
+    # 04:30 UTC on Nov 21 is 15:30 AEDT on Nov 21 (but Nov 20 in ET); 21:05 UTC on Nov 20 is 08:05 on Nov 21.
+    params = {"accepted_from": "2026-11-21", "accepted_to": "2026-11-21", "tz": "Australia/Melbourne"}
+    page = signed_in_client.get("/api/filings", params=params)
+    assert _accessions(page.json()) == ["0001018724-26-000002", "0001045810-26-000001"]
+
+
 @pytest.mark.parametrize(
     "params",
     [
@@ -205,6 +214,7 @@ def test_filings_filter_by_ticker_form_and_eastern_date(signed_in_client, connec
         {"accepted_from": "nope"},
         {"accepted_from": "2026-11-22", "accepted_to": "2026-11-21"},
         {"materiality": "medium"},
+        {"tz": "Mars/Olympus"},
     ],
 )
 def test_filings_reject_bad_parameters(signed_in_client, params) -> None:

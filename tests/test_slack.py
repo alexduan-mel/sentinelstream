@@ -17,6 +17,9 @@ WEBHOOK = "https://hooks.slack.com/services/T000/B000/not-a-real-secret"
 SEC_URL = "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000123/0001045810-26-000123-index.htm"
 
 
+STAMP = int(datetime(2026, 11, 26, 21, 5, 30, tzinfo=UTC).timestamp())
+
+
 def _alert(*issuers: AlertIssuer, form_type: str = "8-K") -> Alert:
     return Alert(
         accession_no="0001045810-26-000123",
@@ -56,10 +59,13 @@ def test_webhook_url_must_be_set_and_be_a_slack_webhook(monkeypatch) -> None:
 
 
 def test_message_names_tickers_form_reason_time_and_links_the_filing() -> None:
+    # Slack shows <!date^unix^format|fallback> in each reader's own time zone (daylight saving
+    # included); US Eastern follows as the market's clock.
     assert format_message(_alert()) == (
         "*NVDA* · 8-K\n"
         "Item 2.02 Results of Operations and Financial Condition\n"
-        f"Accepted Nov 26, 16:05 ET · <{SEC_URL}|Filing on SEC>"
+        f"Accepted <!date^{STAMP}^{{date_short_pretty}} at {{time}}|Nov 26, 16:05 ET> (Nov 26, 16:05 ET)"
+        f" · <{SEC_URL}|Filing on SEC>"
     )
 
 

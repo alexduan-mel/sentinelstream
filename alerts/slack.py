@@ -44,9 +44,17 @@ def _escape(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _accepted(when: datetime) -> str:
+def _eastern(when: datetime) -> str:
     local = when.astimezone(NEW_YORK)
     return f"{local:%b} {local.day}, {local:%H:%M} ET"
+
+
+def _accepted(when: datetime) -> str:
+    """Each reader's own time (Slack renders ``<!date>`` in the zone of their Slack profile, daylight
+    saving included), then the market's clock in US Eastern. Clients that cannot render the token show
+    the fallback after ``|``."""
+    eastern = _eastern(when)
+    return f"<!date^{int(when.timestamp())}^{{date_short_pretty}} at {{time}}|{eastern}> ({eastern})"
 
 
 def format_message(alert: Alert) -> str:

@@ -3,6 +3,7 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 
 import { LoadError } from "../components/LoadError";
 import { TopBar } from "../components/TopBar";
+import { TimeZoneProvider } from "../lib/timeZone";
 import { useAuth } from "./AuthContext";
 
 /** The signed-in shell: top bar plus the page. Signed-out visitors go to /login and come back after. */
@@ -28,11 +29,13 @@ export function RequireAuth() {
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   }
   return (
-    <Layout className="min-h-screen">
-      <TopBar username={state.user.username} />
-      <Layout.Content className="p-24">
-        <Outlet />
-      </Layout.Content>
-    </Layout>
+    <TimeZoneProvider>
+      <Layout className="min-h-screen">
+        <TopBar username={state.user.username} />
+        <Layout.Content className="p-24">
+          <Outlet />
+        </Layout.Content>
+      </Layout>
+    </TimeZoneProvider>
   );
 }

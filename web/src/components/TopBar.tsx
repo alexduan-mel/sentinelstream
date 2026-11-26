@@ -1,7 +1,9 @@
-import { Button, Dropdown, Layout, Tabs, Typography } from "antd";
+import { Button, Dropdown, Layout, Segmented, Tabs, Typography } from "antd";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
+import { US_EASTERN, zoneLabel } from "../lib/time";
+import { useTimeZone, type ZoneChoice } from "../lib/timeZone";
 
 /** Only pages that exist get a tab (DESIGN.md: hide what is unfinished). */
 export const NAV_ITEMS = [
@@ -17,6 +19,24 @@ export function activeNavKey(pathname: string): string {
       : pathname === item.key || pathname.startsWith(`${item.key}/`)
   );
   return match?.key ?? "";
+}
+
+/** ET | AEDT: which clock the page's times use. Hidden for viewers whose own zone is US Eastern. */
+export function ZoneToggle() {
+  const { choice, localZone, setChoice } = useTimeZone();
+  if (localZone === US_EASTERN) return null;
+  return (
+    <Segmented<ZoneChoice>
+      size="small"
+      aria-label="Time zone"
+      value={choice}
+      onChange={setChoice}
+      options={[
+        { value: "et", label: "ET", title: "US Eastern, the market's clock" },
+        { value: "local", label: zoneLabel(new Date(), localZone), title: localZone }
+      ]}
+    />
+  );
 }
 
 export function TopBar({ username }: { username: string }) {
@@ -36,6 +56,7 @@ export function TopBar({ username }: { username: string }) {
         items={NAV_ITEMS}
         onChange={(key) => navigate(key)}
       />
+      <ZoneToggle />
       <Dropdown
         trigger={["click"]}
         menu={{

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -69,16 +70,16 @@ def filing_items(form_type: str, numbers: list[str]) -> list[FilingItem]:
     return [FilingItem(number=number, title=item_title(number) if titled else None) for number in numbers]
 
 
-# Filters shared by the count and the page. Dates are US Eastern calendar days, as the UI shows them.
+# Filters shared by the count and the page. Dates are calendar days in ``tz``, the zone the UI shows.
 _WHERE = """
     WHERE (cardinality(%(tickers)s::text[]) = 0 OR f.accession_no IN (
               SELECT l.accession_no FROM filing_issuers l JOIN instruments i ON i.cik = l.cik
               WHERE i.symbol = ANY(%(tickers)s::text[])))
       AND (cardinality(%(form_types)s::text[]) = 0 OR f.form_type = ANY(%(form_types)s::text[]))
       AND (%(accepted_from)s::date IS NULL
-           OR f.accepted_at >= %(accepted_from)s::date::timestamp AT TIME ZONE 'America/New_York')
+           OR f.accepted_at >= %(accepted_from)s::date::timestamp AT TIME ZONE %(zone)s)
       AND (%(accepted_to)s::date IS NULL
-           OR f.accepted_at < (%(accepted_to)s::date + 1)::timestamp AT TIME ZONE 'America/New_York')
+           OR f.accepted_at < (%(accepted_to)s::date + 1)::timestamp AT TIME ZONE %(zone)s)
       AND (%(materiality)s::text IS NULL
            OR (%(materiality)s = 'high' AND EXISTS (
                   SELECT 1 FROM filing_issuers l WHERE l.accession_no = f.accession_no AND l.materiality = 'high'))
@@ -96,19 +97,25 @@ def list_filings(
     accepted_from: date | None = None,
     accepted_to: date | None = None,
     materiality: Literal["high", "low"] | None = None,
+    tz: Annotated[str, Query(max_length=64)] = "America/New_York",
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> FilingPage:
-    """Filings newest first by EDGAR acceptance, filtered by ticker, form type, accepted date (ET) and
-    materiality."""
+    """Filings newest first by EDGAR acceptance, filtered by ticker, form type, accepted date and
+    materiality. Accepted dates are calendar days in ``tz``, an IANA zone (US Eastern by default)."""
     if accepted_from and accepted_to and accepted_from > accepted_to:
         raise HTTPException(status_code=422, detail="accepted_from is after accepted_to")
+    try:
+        zone = ZoneInfo(tz).key
+    except (ZoneInfoNotFoundError, ValueError):
+        raise HTTPException(status_code=422, detail=f"tz {tz!r} is not an IANA time zone") from None
     params: dict[str, Any] = {
         "tickers": [symbol.strip().upper() for symbol in ticker or [] if symbol.strip()],
         "form_types": [form.strip() for form in form_type or [] if form.strip()],
         "accepted_from": accepted_from,
         "accepted_to": accepted_to,
         "materiality": materiality,
+        "zone": zone,
         "limit": limit,
         "offset": offset,
     }
