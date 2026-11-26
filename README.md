@@ -58,7 +58,7 @@ Other decisions are recorded in [`docs/decisions/`](docs/decisions).
 | Milestone | Status | What it delivers |
 | --- | --- | --- |
 | **M0** Showcase repo on AWS | Done, Nov 2026 | CI with gitleaks, Terraform for stage 1, auto-deploy to EC2 on merge, scheduler and worker, SEC filings and daily price ingestion, sign-in, the Tasks page, and a read-only Alerts list of stored filings |
-| **M1** Alerts live | Next | Materiality rules v0 (8-K items 1.01, 2.02, 4.02, 5.02 and Form 4 open-market purchases), Slack alerts within 10 minutes of EDGAR acceptance, ticker onboarding, materiality and Slack delivery on the Alerts page, the Watchlist page, and the `task_run_failed` log line that feeds the existing alarm |
+| **M1** Alerts live | In progress | Materiality rules v0 (8-K items 1.01, 2.02, 4.02, 5.02 and Form 4 open-market purchases), Slack alerts within 10 minutes of EDGAR acceptance, ticker onboarding, materiality and Slack delivery on the Alerts page, the Watchlist page, and the `task_run_failed` log line that feeds the existing alarm |
 | **M2** Evidence harness | Planned | As-of data access with tests proving lookahead is blocked, event studies with costs, and a base rate (with sample size) on every alert |
 | **M3** Explain | Planned | XBRL fundamentals and a year-over-year 10-K diff with citations to filing sections |
 | **M4** Journal | Planned | Decision ledger, and returns against QQQ split into alpha and beta |

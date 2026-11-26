@@ -38,6 +38,9 @@ _ACCESSION = re.compile(r"^[0-9]{10}-[0-9]{2}-[0-9]{6}$")
 _FUTURE_TOLERANCE = timedelta(minutes=5)
 _EDGAR_OPENS = time(5, 45)
 _EDGAR_CLOSES = time(22, 15)
+# Forms SEC itself issues in an overnight batch (EFFECT notices land at about 00:15 ET year-round),
+# so their acceptance times fall outside filing hours by design and say nothing about the zone.
+_SEC_OVERNIGHT_FORMS = frozenset({"EFFECT"})
 
 
 @dataclass(frozen=True)
@@ -275,7 +278,9 @@ def ingest_sec_filings(run: TaskRun, conn: Connection, *, sec: SecClient | None 
             if early:
                 future_acceptance += len(early)
                 LOGGER.warning("sec_acceptance_in_future cik=%s count=%d", cik, len(early))
-            late_night = [r for r in records if outside_edgar_hours(r.accepted_at)]
+            late_night = [
+                r for r in records if r.form_type not in _SEC_OVERNIGHT_FORMS and outside_edgar_hours(r.accepted_at)
+            ]
             if late_night:
                 off_hours += len(late_night)
                 LOGGER.warning("sec_acceptance_outside_edgar_hours cik=%s count=%d", cik, len(late_night))

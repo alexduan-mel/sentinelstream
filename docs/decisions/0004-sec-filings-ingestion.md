@@ -20,7 +20,7 @@ The prototype never stored filings. Its SEC client fetched one annual report for
 
 ## Consequences
 
-- A filing appears in `filings` within one poll interval of its listing in the submissions API. The 5-minute interval lands in M1 with alerting (`task_definitions` still says 10 and `manual`).
+- A filing appears in `filings` within one poll interval of its listing in the submissions API. The 5-minute interval landed in M1: migration 003 made the task automatic every 5 minutes.
 - The raw submissions JSON is not archived yet (`raw_s3_key` and `raw_sha256` stay NULL). Archiving to S3 comes with M1 alerting, so a disputed alert can be replayed from what the poller saw.
 - Filings older than the submissions API's `recent` block (more than about a year, or beyond 1,000 filings) need the paged history files. Fetching those is the onboarding backfill (M1).
 - A symbol whose SEC identity changes (a merger, or a new CIK) keeps its old CIK until someone clears it and reruns. Ticker changes are already out of scope (ADR 0002).
