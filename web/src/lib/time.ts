@@ -1,19 +1,14 @@
 /**
- * Times are stored in UTC and shown in the display time zone, which the API reports from the
- * DISPLAY_TIMEZONE setting (US Eastern when unset). Intl follows daylight saving for any IANA zone.
+ * Times are stored in UTC. The page shows them in US Eastern (the market's clock) or in the
+ * browser's own zone, whichever the viewer picks in the top bar. Intl follows daylight saving for
+ * every IANA zone, so the browser's zone reads AEDT in summer and AEST in winter by itself.
  */
 
 export const US_EASTERN = "America/New_York";
 
-let displayZone = US_EASTERN;
-
-/** Set once the signed-in shell has read /api/settings. */
-export function setDisplayZone(zone: string): void {
-  displayZone = zone;
-}
-
-export function getDisplayZone(): string {
-  return displayZone;
+/** The browser's IANA zone, e.g. "Australia/Melbourne". */
+export function browserZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || US_EASTERN;
 }
 
 type Formatters = {
@@ -53,7 +48,7 @@ function formatters(zone: string): Formatters {
 }
 
 /** "ET" for US Eastern, else the zone's abbreviation at that moment: AEDT in summer, AEST in winter. */
-export function zoneLabel(date: Date, zone: string = displayZone): string {
+export function zoneLabel(date: Date, zone: string): string {
   if (zone === US_EASTERN) return "ET";
   const part = formatters(zone)
     .name.formatToParts(date)
@@ -62,7 +57,7 @@ export function zoneLabel(date: Date, zone: string = displayZone): string {
 }
 
 export type FormattedTime = {
-  /** "14:32 AEDT" today, "Nov 23 14:32 AEDT" earlier this year, "Nov 23, 2025 14:32 AEDT" before that. */
+  /** "14:32 ET" today, "Nov 23 14:32 ET" earlier this year, "Nov 23, 2025 14:32 ET" before that. */
   text: string;
   /** "8m ago" or "in 3m", only for times on today's date in the zone. */
   relative: string | null;
@@ -71,7 +66,7 @@ export type FormattedTime = {
 export function formatTime(
   iso: string,
   now: Date = new Date(),
-  zone: string = displayZone
+  zone: string = US_EASTERN
 ): FormattedTime {
   const date = new Date(iso);
   const f = formatters(zone);
@@ -86,12 +81,11 @@ export function formatTime(
   return { text: `${day}, ${f.year.format(date)} ${clock}`, relative: null };
 }
 
-/** The same moment on the US market's clock, e.g. "Nov 26 16:05 ET"; null when that is the display zone. */
-export function usEasternTime(iso: string, zone: string = displayZone): string | null {
-  if (zone === US_EASTERN) return null;
+/** The same moment with its date, in another zone, for hover text: "Nov 26 16:05 ET". */
+export function formatInZone(iso: string, zone: string): string {
   const date = new Date(iso);
-  const f = formatters(US_EASTERN);
-  return `${f.day.format(date)} ${f.clock.format(date)} ET`;
+  const f = formatters(zone);
+  return `${f.day.format(date)} ${f.clock.format(date)} ${zoneLabel(date, zone)}`;
 }
 
 export function formatRelative(date: Date, now: Date = new Date()): string {

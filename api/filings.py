@@ -12,11 +12,11 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from alerts.display_time import DisplayTimezoneError, display_timezone
 from api.db import DbConn
 from filings.edgar import sec_index_url
 from filings.form_8k import item_title
@@ -70,8 +70,7 @@ def filing_items(form_type: str, numbers: list[str]) -> list[FilingItem]:
     return [FilingItem(number=number, title=item_title(number) if titled else None) for number in numbers]
 
 
-# Filters shared by the count and the page. Dates are calendar days in the display time zone, as the UI
-# shows them.
+# Filters shared by the count and the page. Dates are calendar days in ``tz``, the zone the UI shows.
 _WHERE = """
     WHERE (cardinality(%(tickers)s::text[]) = 0 OR f.accession_no IN (
               SELECT l.accession_no FROM filing_issuers l JOIN instruments i ON i.cik = l.cik
@@ -98,17 +97,18 @@ def list_filings(
     accepted_from: date | None = None,
     accepted_to: date | None = None,
     materiality: Literal["high", "low"] | None = None,
+    tz: Annotated[str, Query(max_length=64)] = "America/New_York",
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> FilingPage:
-    """Filings newest first by EDGAR acceptance, filtered by ticker, form type, accepted date (in the
-    display time zone) and materiality."""
+    """Filings newest first by EDGAR acceptance, filtered by ticker, form type, accepted date and
+    materiality. Accepted dates are calendar days in ``tz``, an IANA zone (US Eastern by default)."""
     if accepted_from and accepted_to and accepted_from > accepted_to:
         raise HTTPException(status_code=422, detail="accepted_from is after accepted_to")
     try:
-        zone = display_timezone().key
-    except DisplayTimezoneError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from None
+        zone = ZoneInfo(tz).key
+    except (ZoneInfoNotFoundError, ValueError):
+        raise HTTPException(status_code=422, detail=f"tz {tz!r} is not an IANA time zone") from None
     params: dict[str, Any] = {
         "tickers": [symbol.strip().upper() for symbol in ticker or [] if symbol.strip()],
         "form_types": [form.strip() for form in form_type or [] if form.strip()],

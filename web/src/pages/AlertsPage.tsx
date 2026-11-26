@@ -31,6 +31,7 @@ import { LoadError } from "../components/LoadError";
 import { PageTitle } from "../components/PageTitle";
 import { EMPTY, Timestamp } from "../components/Timestamp";
 import { zoneLabel } from "../lib/time";
+import { useTimeZone } from "../lib/timeZone";
 
 export const FILINGS_PAGE_SIZE = 50;
 /** How often the poll line re-reads the SEC poller's schedule. */
@@ -186,6 +187,7 @@ export function AlertsPage() {
   const [materiality, setMateriality] = useState<MaterialityFilter>("all");
   const [poller, setPoller] = useState<TaskDefinition | undefined>(undefined);
   const [now, setNow] = useState(() => new Date());
+  const { zone: timeZone } = useTimeZone();
   const [page, setPage] = useState(1);
 
   const loadFilings = useCallback(async () => {
@@ -197,6 +199,7 @@ export function AlertsPage() {
         acceptedFrom: range?.[0],
         acceptedTo: range?.[1],
         materiality: materiality === "all" ? undefined : materiality,
+        timeZone,
         limit: FILINGS_PAGE_SIZE,
         offset: (page - 1) * FILINGS_PAGE_SIZE
       });
@@ -204,7 +207,7 @@ export function AlertsPage() {
     } catch (error) {
       setFilings((current) => ({ ...current, loading: false, error: errorMessage(error) }));
     }
-  }, [tickers, formTypes, range, materiality, page]);
+  }, [tickers, formTypes, range, materiality, timeZone, page]);
 
   useEffect(() => {
     void loadFilings();
@@ -241,7 +244,7 @@ export function AlertsPage() {
   const filtered =
     tickers.length > 0 || formTypes.length > 0 || range !== null || materiality !== "all";
   const poll = pollLine(poller, now);
-  const zone = zoneLabel(now);
+  const zone = zoneLabel(now, timeZone);
 
   return (
     <Space orientation="vertical" size={16} className="w-full">

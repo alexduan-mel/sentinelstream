@@ -2,8 +2,8 @@ import { Layout, Spin } from "antd";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
 import { LoadError } from "../components/LoadError";
-import { SettingsGate } from "../components/SettingsGate";
 import { TopBar } from "../components/TopBar";
+import { TimeZoneProvider } from "../lib/timeZone";
 import { useAuth } from "./AuthContext";
 
 /** The signed-in shell: top bar plus the page. Signed-out visitors go to /login and come back after. */
@@ -29,13 +29,13 @@ export function RequireAuth() {
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   }
   return (
-    <SettingsGate>
+    <TimeZoneProvider>
       <Layout className="min-h-screen">
         <TopBar username={state.user.username} />
         <Layout.Content className="p-24">
           <Outlet />
         </Layout.Content>
       </Layout>
-    </SettingsGate>
+    </TimeZoneProvider>
   );
 }

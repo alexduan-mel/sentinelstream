@@ -1,19 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import {
-  formatDuration,
-  formatRelative,
-  formatTime,
-  getDisplayZone,
-  setDisplayZone,
-  US_EASTERN,
-  usEasternTime,
-  zoneLabel
-} from "./time";
+import { formatDuration, formatInZone, formatRelative, formatTime, zoneLabel } from "./time";
 
 const MELBOURNE = "Australia/Melbourne";
-
-afterEach(() => setDisplayZone(US_EASTERN));
 
 // 25 Nov 2026 15:00 UTC is 10:00 ET (EST, UTC-5).
 const NOW = new Date("2026-11-25T15:00:00Z");
@@ -49,31 +38,28 @@ describe("formatTime", () => {
   });
 });
 
-describe("display zone", () => {
-  it("is US Eastern until settings say otherwise", () => {
-    expect(getDisplayZone()).toBe(US_EASTERN);
-    expect(usEasternTime("2026-11-26T21:05:00Z")).toBeNull();
-  });
-
+describe("other zones", () => {
   it("shows Melbourne time with AEDT in summer and AEST in winter", () => {
-    setDisplayZone(MELBOURNE);
-    // 25 Nov 15:00 UTC is 26 Nov 02:00 AEDT (UTC+11), so 21:05 UTC on 25 Nov is 08:05 on 26 Nov: today.
-    expect(formatTime("2026-11-25T21:05:00Z", new Date("2026-11-25T22:00:00Z"))).toEqual({
-      text: "08:05 AEDT",
-      relative: "55m ago"
-    });
-    expect(formatTime("2026-11-24T21:05:00Z", NOW).text).toBe("Nov 25 08:05 AEDT");
-    expect(formatTime("2026-07-01T21:05:00Z", NOW).text).toBe("Jul 2 07:05 AEST");
+    // 21:05 UTC on 25 Nov is 08:05 AEDT (UTC+11) on 26 Nov.
+    expect(formatTime("2026-11-25T21:05:00Z", new Date("2026-11-25T22:00:00Z"), MELBOURNE)).toEqual(
+      {
+        text: "08:05 AEDT",
+        relative: "55m ago"
+      }
+    );
+    expect(formatTime("2026-11-24T21:05:00Z", NOW, MELBOURNE).text).toBe("Nov 25 08:05 AEDT");
+    expect(formatTime("2026-07-01T21:05:00Z", NOW, MELBOURNE).text).toBe("Jul 2 07:05 AEST");
   });
 
   it("switches label at the end of daylight saving (03:00 AEDT on 5 Apr 2026)", () => {
     expect(zoneLabel(new Date("2026-04-04T15:59:00Z"), MELBOURNE)).toBe("AEDT");
     expect(zoneLabel(new Date("2026-04-04T16:01:00Z"), MELBOURNE)).toBe("AEST");
+    expect(zoneLabel(new Date("2026-04-04T16:01:00Z"), "America/New_York")).toBe("ET");
   });
 
-  it("keeps the US market's clock at hand", () => {
-    setDisplayZone(MELBOURNE);
-    expect(usEasternTime("2026-11-26T21:05:00Z")).toBe("Nov 26 16:05 ET");
+  it("gives the full moment in another zone for hover text", () => {
+    expect(formatInZone("2026-11-26T21:05:00Z", "America/New_York")).toBe("Nov 26 16:05 ET");
+    expect(formatInZone("2026-11-26T21:05:00Z", MELBOURNE)).toBe("Nov 27 08:05 AEDT");
   });
 });
 

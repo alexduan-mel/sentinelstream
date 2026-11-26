@@ -196,27 +196,13 @@ def test_filings_filter_by_ticker_form_and_eastern_date(signed_in_client, connec
     assert get(limit=10, offset=10) == {"items": [], "total": 4}
 
 
-def test_date_filters_use_the_display_time_zone(signed_in_client, connect_app_db, monkeypatch) -> None:
+def test_date_filters_use_the_zone_the_page_shows(signed_in_client, connect_app_db) -> None:
     _seed(connect_app_db)
-    monkeypatch.setenv("DISPLAY_TIMEZONE", "Australia/Melbourne")
 
     # 04:30 UTC on Nov 21 is 15:30 AEDT on Nov 21 (but Nov 20 in ET); 21:05 UTC on Nov 20 is 08:05 on Nov 21.
-    page = signed_in_client.get("/api/filings", params={"accepted_from": "2026-11-21", "accepted_to": "2026-11-21"})
+    params = {"accepted_from": "2026-11-21", "accepted_to": "2026-11-21", "tz": "Australia/Melbourne"}
+    page = signed_in_client.get("/api/filings", params=params)
     assert _accessions(page.json()) == ["0001018724-26-000002", "0001045810-26-000001"]
-
-    monkeypatch.setenv("DISPLAY_TIMEZONE", "Mars/Olympus")
-    broken = signed_in_client.get("/api/filings")
-    assert broken.status_code == 503
-    assert "DISPLAY_TIMEZONE" in broken.json()["detail"]
-
-
-def test_settings_give_the_display_time_zone(signed_in_client, monkeypatch) -> None:
-    monkeypatch.delenv("DISPLAY_TIMEZONE", raising=False)
-    assert signed_in_client.get("/api/settings").json() == {"display_timezone": "America/New_York"}
-    monkeypatch.setenv("DISPLAY_TIMEZONE", "Australia/Melbourne")
-    assert signed_in_client.get("/api/settings").json() == {"display_timezone": "Australia/Melbourne"}
-    monkeypatch.setenv("DISPLAY_TIMEZONE", "nowhere")
-    assert signed_in_client.get("/api/settings").status_code == 503
 
 
 @pytest.mark.parametrize(
@@ -228,6 +214,7 @@ def test_settings_give_the_display_time_zone(signed_in_client, monkeypatch) -> N
         {"accepted_from": "nope"},
         {"accepted_from": "2026-11-22", "accepted_to": "2026-11-21"},
         {"materiality": "medium"},
+        {"tz": "Mars/Olympus"},
     ],
 )
 def test_filings_reject_bad_parameters(signed_in_client, params) -> None:

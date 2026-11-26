@@ -1,23 +1,24 @@
 import { Tooltip, Typography } from "antd";
 
-import { formatTime, usEasternTime } from "../lib/time";
+import { formatInZone, formatTime } from "../lib/time";
+import { useTimeZone } from "../lib/timeZone";
 
 export const EMPTY = "—";
 
-/** A time in the display zone. When that is not US Eastern, hovering shows the market's clock too. */
+/** A time in the zone picked in the top bar. Hovering shows the same moment in the other zone. */
 export function Timestamp({ value, now }: { value: string | null; now?: Date }) {
+  const { zone, otherZone } = useTimeZone();
   if (!value) return <Typography.Text type="secondary">{EMPTY}</Typography.Text>;
-  const { text, relative } = formatTime(value, now);
-  const eastern = usEasternTime(value);
+  const { text, relative } = formatTime(value, now, zone);
   const shown = (
     <span>
       {text}
       {relative && <Typography.Text type="secondary"> {relative}</Typography.Text>}
     </span>
   );
-  if (!eastern) return shown;
+  if (otherZone === zone) return shown;
   return (
-    <Tooltip title={eastern} mouseEnterDelay={0.05}>
+    <Tooltip title={formatInZone(value, otherZone)} mouseEnterDelay={0.05}>
       <span className="cursor-help">{shown}</span>
     </Tooltip>
   );

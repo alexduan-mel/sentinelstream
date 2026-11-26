@@ -37,10 +37,12 @@ export type FilingFacets = { tickers: string[]; form_types: string[] };
 export type FilingFilters = {
   tickers: string[];
   formTypes: string[];
-  /** US Eastern calendar days, "YYYY-MM-DD". */
+  /** Calendar days in ``timeZone``, "YYYY-MM-DD". */
   acceptedFrom?: string;
   acceptedTo?: string;
   materiality?: Materiality;
+  /** IANA zone whose calendar days the accepted dates are; the API defaults to US Eastern. */
+  timeZone?: string;
   limit: number;
   offset: number;
 };
@@ -55,6 +57,7 @@ export function filingsQuery(filters: FilingFilters): string {
   if (filters.acceptedFrom) params.set("accepted_from", filters.acceptedFrom);
   if (filters.acceptedTo) params.set("accepted_to", filters.acceptedTo);
   if (filters.materiality) params.set("materiality", filters.materiality);
+  if (filters.timeZone) params.set("tz", filters.timeZone);
   return params.toString();
 }
 
