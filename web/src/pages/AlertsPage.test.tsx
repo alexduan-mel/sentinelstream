@@ -200,7 +200,7 @@ describe("AlertsPage", () => {
     ).toBeTruthy();
     fireEvent.mouseEnter(within(purchase as HTMLElement).getByText("High"));
     expect(await screen.findByText(form4.materiality_reason!)).toBeTruthy();
-    expect(within(purchase as HTMLElement).getByTitle("2026-11-21T04:34:10Z")).toBeTruthy();
+    expect(within(purchase as HTMLElement).getByText("Nov 20 23:34 ET")).toBeTruthy();
 
     const low = screen.getByRole("link", { name: /0001018724-26-000003/ }).closest("tr")!;
     expect(within(low as HTMLElement).getByText("Low")).toBeTruthy();

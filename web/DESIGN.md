@@ -56,7 +56,7 @@ Nothing is smaller than 12px.
 
 - **Top bar** (48px, full width, bottom border): the text wordmark "SentinelStream" on the left; nav tabs **Alerts, Watchlist, Tasks**, with a 2px underline on the active tab; on the right, a user menu showing the username, with "Sign out". Nothing else goes in the top bar.
 - **Page**: a title row (title plus a muted count, e.g. "Alerts · 15"), an optional filter row, then content. Pages scroll normally. There are no docked panes, no command palette and no keyboard-shortcut bar.
-- **Times**: stored in UTC, shown in US Eastern. Today: `14:32 ET` with a muted relative time (`8m ago`). Earlier: `Nov 23 14:32 ET`. Durations: `3.4s`.
+- **Times**: stored in UTC, shown in the display time zone (`DISPLAY_TIMEZONE`, an IANA name; US Eastern when unset), following daylight saving. Today: `14:32 AEDT` (or `14:32 ET`) with a muted relative time (`8m ago`). Earlier: `Nov 23 14:32 AEDT`. When the display zone is not US Eastern, hovering a time shows it on the market's clock (`Nov 23 22:32 ET`), since before-open and after-close matter. Schedules tied to the US market keep ET ("Weekdays 18:30 ET"). The accepted-date filter uses calendar days in the display zone. Durations: `3.4s`.
 - **States**: every data view has a loading state (Table `loading`), an empty state (one line of muted text, no illustration) and an error state (inline Ant Design `Alert` with a Retry button).
 
 ## Pages

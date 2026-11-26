@@ -2,6 +2,7 @@ import { Layout, Spin } from "antd";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
 import { LoadError } from "../components/LoadError";
+import { SettingsGate } from "../components/SettingsGate";
 import { TopBar } from "../components/TopBar";
 import { useAuth } from "./AuthContext";
 
@@ -28,11 +29,13 @@ export function RequireAuth() {
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   }
   return (
-    <Layout className="min-h-screen">
-      <TopBar username={state.user.username} />
-      <Layout.Content className="p-24">
-        <Outlet />
-      </Layout.Content>
-    </Layout>
+    <SettingsGate>
+      <Layout className="min-h-screen">
+        <TopBar username={state.user.username} />
+        <Layout.Content className="p-24">
+          <Outlet />
+        </Layout.Content>
+      </Layout>
+    </SettingsGate>
   );
 }

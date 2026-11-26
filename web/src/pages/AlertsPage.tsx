@@ -30,6 +30,7 @@ import { listTasks, type TaskDefinition } from "../api/tasks";
 import { LoadError } from "../components/LoadError";
 import { PageTitle } from "../components/PageTitle";
 import { EMPTY, Timestamp } from "../components/Timestamp";
+import { zoneLabel } from "../lib/time";
 
 export const FILINGS_PAGE_SIZE = 50;
 /** How often the poll line re-reads the SEC poller's schedule. */
@@ -240,6 +241,7 @@ export function AlertsPage() {
   const filtered =
     tickers.length > 0 || formTypes.length > 0 || range !== null || materiality !== "all";
   const poll = pollLine(poller, now);
+  const zone = zoneLabel(now);
 
   return (
     <Space orientation="vertical" size={16} className="w-full">
@@ -285,8 +287,8 @@ export function AlertsPage() {
           />
           <DatePicker.RangePicker
             allowEmpty={[true, true]}
-            className="w-[320px]"
-            placeholder={["Accepted from (ET)", "Accepted to (ET)"]}
+            className="w-[370px]"
+            placeholder={[`Accepted from (${zone})`, `Accepted to (${zone})`]}
             onChange={(_, [from, to]) => {
               setRange(from || to ? [from, to] : null);
               setPage(1);
