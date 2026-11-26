@@ -196,12 +196,13 @@ def classify_links(conn: Connection, client: SecClient, *, backfill_form4_budget
             if result.level == "high":
                 stats.high += 1
                 link = next(link for link in filing.links if link.cik == cik)
+                if link.is_backfill:
+                    continue  # history: counted, not logged one line each
                 LOGGER.info(
-                    "filing_high accession_no=%s cik=%s form_type=%s backfill=%s reason=%s",
+                    "filing_high accession_no=%s cik=%s form_type=%s reason=%s",
                     filing.accession_no,
                     cik,
                     filing.form_type,
-                    link.is_backfill,
                     result.reason,
                 )
     return stats
