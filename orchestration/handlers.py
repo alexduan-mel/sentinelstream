@@ -12,7 +12,7 @@ from collections.abc import Callable, Mapping
 
 from psycopg2.extensions import connection as Connection
 
-from ingestion import market_bars, onboarding, price_bars, sec_filings
+from ingestion import market_bars, onboarding, price_bars, sec_filings, splits
 from orchestration.task_runs import RunResult, TaskRun
 
 Handler = Callable[[TaskRun, Connection], RunResult]
@@ -22,4 +22,5 @@ HANDLERS: Mapping[str, Handler] = {
     onboarding.TASK_ID: onboarding.onboard_tickers,
     price_bars.TASK_ID: price_bars.ingest_prices,
     sec_filings.TASK_ID: sec_filings.ingest_sec_filings,
+    splits.TASK_ID: splits.ingest_splits,
 }

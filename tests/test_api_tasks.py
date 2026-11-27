@@ -43,15 +43,20 @@ def test_list_tasks_shows_seeded_definitions(signed_in_client) -> None:
 
     assert response.status_code == 200
     tasks = response.json()
-    # Onboarding and market bars are due at once after their migrations, then on their schedules.
-    onboarding = tasks.pop()
-    assert onboarding["task_id"] == "onboard_tickers"
-    assert (onboarding["schedule_label"], onboarding["trigger_mode"]) == ("Daily 19:00 ET", "automatic")
-    assert onboarding["next_run_at"] is not None
-    market_bars = tasks.pop(0)
-    assert market_bars["task_id"] == "ingest_market_bars"
-    assert (market_bars["schedule_label"], market_bars["trigger_mode"]) == ("Every 10 min", "automatic")
-    assert market_bars["next_run_at"] is not None
+    assert [task["task_id"] for task in tasks] == sorted(task["task_id"] for task in tasks)
+    # Tasks added by later migrations are due at once after them, then on their schedules.
+    due_now = {
+        task["task_id"]: (task["schedule_label"], task["trigger_mode"])
+        for task in tasks
+        if task["task_id"] in ("ingest_market_bars", "ingest_splits", "onboard_tickers")
+    }
+    assert due_now == {
+        "ingest_market_bars": ("Every 10 min", "automatic"),
+        "ingest_splits": ("Daily 17:00 ET", "automatic"),
+        "onboard_tickers": ("Daily 19:00 ET", "automatic"),
+    }
+    assert all(task["next_run_at"] is not None for task in tasks if task["task_id"] in due_now)
+    tasks = [task for task in tasks if task["task_id"] not in due_now]
     assert tasks == [
         {
             "task_id": "ingest_prices",

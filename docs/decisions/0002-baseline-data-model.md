@@ -50,3 +50,7 @@ Every container started from the app image runs the runner first (the image entr
 - The `filings` ingestion is new code, not a carry-over. Before trusting `accepted_at`, check the time zone of EDGAR's `acceptanceDateTime` against a filing index page.
 - Prototype data is not imported now. The prototype database is archived to S3. If it is imported later, note that its `SPCX` rows belong to the SPAC and New Issue ETF, not SpaceX, and that backfilled news has no real `first_seen_at`.
 - Both seeded tasks start as `manual`. Switch them to `automatic` once the provider credentials are in Parameter Store.
+
+## Update, 27 Nov 2026
+
+Split detection is built as described, and market-wide splits are stored for research ([ADR 0013](0013-stock-splits.md)). The `suspect` rule for unexplained moves above 40% was never built and is no longer needed for that purpose.
