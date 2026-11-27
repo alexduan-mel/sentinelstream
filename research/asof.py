@@ -412,6 +412,17 @@ class AsOf:
             for acc, cik_, form, its, filed, accepted, known, name, tks, exs, sic in rows
         ]
 
+    def issuer_industries(self) -> dict[str, str]:
+        """CIK → SIC industry code, as SEC listed it when each company's record was last read.
+
+        Reference data, not a time-stamped fact: SEC keeps no history of a company's industry, so this
+        is the one read here without ``known_at`` (ADR 0018). It is used only to group past events,
+        never as an input to a return.
+        """
+        with self._conn.cursor() as cursor:
+            cursor.execute("SELECT cik, sic FROM market_issuers WHERE sic IS NOT NULL")
+            return dict(cursor.fetchall())
+
     def xbrl_facts(self, cik: str, concept: str, *, unit: str | None = None) -> list[XbrlFact]:
         """Every value filed for ``concept`` before ``as_of``, restated ones included, oldest first."""
         where = ["x.cik = %(cik)s", "x.concept = %(concept)s"]

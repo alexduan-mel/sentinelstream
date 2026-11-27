@@ -31,7 +31,9 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from psycopg2.extensions import connection as Connection
+from psycopg2.extras import execute_values
 
+from alerts.materiality import HIGH_8K_ITEMS
 from ingestion.market_calendar import NEW_YORK
 from orchestration.task_runs import RunResult, TaskRun
 from research.asof import AsOf, MarketBar
@@ -95,27 +97,32 @@ class VariantResult:
     skipped: Counter = field(default_factory=Counter)
 
     def report(self) -> dict[str, Any]:
-        by_horizon: dict[str, Any] = {}
-        for horizon in self.settings.horizons:
-            rows = [o for o in self.outcomes if o.horizon == horizon]
-            summary = summarise([o.excess for o in rows], [o.entry_date.strftime("%Y-%m") for o in rows])
-            if summary is None:
-                by_horizon[str(horizon)] = None
-                continue
-            references = [o.excess_reference for o in rows if o.excess_reference is not None]
-            by_horizon[str(horizon)] = {
-                **{key: _round(value) for key, value in summary.as_dict().items()},
-                "mean_gross_return": _round(sum(o.gross_return for o in rows) / len(rows)),
-                "mean_benchmark_return": _round(sum(o.benchmark_return for o in rows) / len(rows)),
-                "mean_cost": _round(sum(o.cost for o in rows) / len(rows)),
-                "mean_excess_vs_reference": _round(sum(references) / len(references)) if references else None,
-                "ended_early": sum(1 for o in rows if o.ended_early),
-            }
         return {
             "settings": asdict(self.settings),
-            "horizons": by_horizon,
+            "horizons": horizon_summaries(self.outcomes, self.settings.horizons),
             "skipped": dict(sorted(self.skipped.items())),
         }
+
+
+def horizon_summaries(outcomes: list[Outcome], horizons: tuple[int, ...]) -> dict[str, Any]:
+    """Horizon → summary of the outcomes' excess returns (None for a horizon without any)."""
+    by_horizon: dict[str, Any] = {}
+    for horizon in horizons:
+        rows = [o for o in outcomes if o.horizon == horizon]
+        summary = summarise([o.excess for o in rows], [o.entry_date.strftime("%Y-%m") for o in rows])
+        if summary is None:
+            by_horizon[str(horizon)] = None
+            continue
+        references = [o.excess_reference for o in rows if o.excess_reference is not None]
+        by_horizon[str(horizon)] = {
+            **{key: _round(value) for key, value in summary.as_dict().items()},
+            "mean_gross_return": _round(sum(o.gross_return for o in rows) / len(rows)),
+            "mean_benchmark_return": _round(sum(o.benchmark_return for o in rows) / len(rows)),
+            "mean_cost": _round(sum(o.cost for o in rows) / len(rows)),
+            "mean_excess_vs_reference": _round(sum(references) / len(references)) if references else None,
+            "ended_early": sum(1 for o in rows if o.ended_early),
+        }
+    return by_horizon
 
 
 def _round(value: Any) -> Any:
@@ -140,8 +147,22 @@ class _Series:
         self.dates = [bar.trading_date for bar in bars]
 
 
-def evaluate(reader: AsOf, events: list[Event], variants: tuple[Settings, ...] = (MAIN, UNFILTERED)) -> dict[str, Any]:
-    """Outcomes and summaries of ``events`` under each of ``variants``, as a JSON-ready report."""
+@dataclass
+class KindResult:
+    """One kind of event's outcomes under each variant."""
+
+    events: int
+    matched: int = 0
+    variants: dict[str, VariantResult] = field(default_factory=dict)
+
+
+def evaluate_kinds(
+    reader: AsOf, events_by_kind: dict[str, list[Event]], variants: tuple[Settings, ...] = (MAIN, UNFILTERED)
+) -> tuple[dict[str, KindResult], list[date]]:
+    """Outcomes of several kinds of event in one pass: each stock's bars are read once for all kinds.
+
+    Returns each kind's results and the sessions loaded.
+    """
     benchmark_symbol = variants[0].benchmark
     if any(v.benchmark != benchmark_symbol for v in variants):
         raise ValueError("all variants must share one benchmark")
@@ -155,32 +176,32 @@ def evaluate(reader: AsOf, events: list[Event], variants: tuple[Settings, ...] =
     references = {v.reference: _Series(reader.market_bars(v.reference)) for v in variants if v.reference}
     reference_splits = {symbol: reader.splits(symbol) for symbol in references}
 
-    results = {v.name: VariantResult(v) for v in variants}
-    by_symbol: dict[str | None, list[Event]] = defaultdict(list)
-    for event in events:
-        by_symbol[event.symbol].append(event)
+    kinds = {
+        kind: KindResult(events=len(events), variants={v.name: VariantResult(v) for v in variants})
+        for kind, events in events_by_kind.items()
+    }
+    by_symbol: dict[str | None, list[tuple[str, Event]]] = defaultdict(list)
+    for kind, events in events_by_kind.items():
+        for event in events:
+            by_symbol[event.symbol].append((kind, event))
 
-    matched = 0
     lookback = max(v.lookback_sessions for v in variants)
-    for count, (symbol, symbol_events) in enumerate(sorted(by_symbol.items(), key=lambda kv: kv[0] or ""), 1):
-        if symbol is None:
-            for result in results.values():
-                result.skipped["no_symbol"] += len(symbol_events)
-            continue
-        bars = reader.market_bars(symbol)
+    for count, (symbol, tagged) in enumerate(sorted(by_symbol.items(), key=lambda kv: kv[0] or ""), 1):
+        bars = reader.market_bars(symbol) if symbol is not None else []
         if not bars:
-            for result in results.values():
-                result.skipped["no_price_data"] += len(symbol_events)
+            reason = "no_symbol" if symbol is None else "no_price_data"
+            for kind, _event in tagged:
+                for result in kinds[kind].variants.values():
+                    result.skipped[reason] += 1
             continue
-        matched += len(symbol_events)
         series, splits = _Series(bars), reader.splits(symbol)
-        for event in symbol_events:
+        for kind, event in tagged:
+            kinds[kind].matched += 1
             prepared = _prepare(event, series, splits, sessions, closes_at, lookback)
-            if isinstance(prepared, str):
-                for result in results.values():
+            for result in kinds[kind].variants.values():
+                if isinstance(prepared, str):
                     result.skipped[prepared] += 1
-                continue
-            for result in results.values():
+                    continue
                 _apply(
                     result,
                     prepared,
@@ -194,13 +215,19 @@ def evaluate(reader: AsOf, events: list[Event], variants: tuple[Settings, ...] =
                 )
         if count % 1000 == 0:
             LOGGER.info("base_rates_progress symbols=%d/%d", count, len(by_symbol))
+    return kinds, sessions
 
+
+def evaluate(reader: AsOf, events: list[Event], variants: tuple[Settings, ...] = (MAIN, UNFILTERED)) -> dict[str, Any]:
+    """Outcomes and summaries of ``events`` under each of ``variants``, as a JSON-ready report."""
+    kinds, sessions = evaluate_kinds(reader, {"events": events}, variants)
+    result = kinds["events"]
     return {
         "as_of": reader.as_of.isoformat(),
-        "events": len(events),
-        "matched_to_prices": matched,
+        "events": result.events,
+        "matched_to_prices": result.matched,
         "sessions": [sessions[0].isoformat(), sessions[-1].isoformat()],
-        "variants": {name: result.report() for name, result in results.items()},
+        "variants": {name: variant.report() for name, variant in result.variants.items()},
     }
 
 
@@ -284,15 +311,112 @@ def _apply(result, prepared, series, splits, sessions, benchmark, benchmark_spli
         )
 
 
-EVENT_KINDS = ("insider_purchases", "8k_items")
+EVENT_KINDS = ("alerts", "insider_purchases", "8k_items")
+MARKET = "market"
+
+
+def industry_scope(sic: str | None) -> str | None:
+    """``sic2:36`` for SIC 3674: the two-digit major group, a broad industry."""
+    if not sic or not sic[:2].isdigit():
+        return None
+    return f"sic2:{sic[:2]}"
+
+
+def alert_events(reader: AsOf) -> dict[tuple[str, str], list[Event]]:
+    """Every kind of event that can make an alert high (ADR 0008), keyed by (kind, key)."""
+    kinds: dict[tuple[str, str], list[Event]] = {("insider_purchase", ""): insider_purchase_events(reader)}
+    for item in HIGH_8K_ITEMS:
+        kinds[("8k_item", item)] = eight_k_events(reader, [item])
+    return kinds
+
+
+def alert_base_rate_rows(reader: AsOf) -> tuple[list[tuple], dict[str, Any]]:
+    """Rows for ``base_rates``: each alert kind, for the whole market and for each industry.
+
+    Returns the rows and a short summary for the run's meta.
+    """
+    events = alert_events(reader)
+    results, sessions = evaluate_kinds(reader, {f"{kind}:{key}": evs for (kind, key), evs in events.items()})
+    industries = reader.issuer_industries()
+    rows: list[tuple] = []
+    summary: dict[str, Any] = {}
+    for (kind, key), name in ((k, f"{k[0]}:{k[1]}") for k in events):
+        result = results[name]
+        for variant_name, variant in result.variants.items():
+            scopes: dict[str, list[Outcome]] = defaultdict(list)
+            scopes[MARKET] = variant.outcomes
+            for outcome in variant.outcomes:
+                scope = industry_scope(industries.get(outcome.event.issuer_cik))
+                if scope:
+                    scopes[scope].append(outcome)
+            for scope, outcomes in scopes.items():
+                for horizon, stats in horizon_summaries(outcomes, variant.settings.horizons).items():
+                    if stats is not None:
+                        rows.append((kind, key, scope, variant_name, int(horizon), stats))
+        main_market = horizon_summaries(result.variants[MAIN.name].outcomes, MAIN.horizons)
+        summary[name] = {
+            "events": result.events,
+            "matched": result.matched,
+            "main_n": {h: (s["n"] if s else 0) for h, s in main_market.items()},
+        }
+    return rows, {"sessions": [sessions[0].isoformat(), sessions[-1].isoformat()], "kinds": summary}
+
+
+_STAT_COLUMNS = (
+    "n",
+    "mean",
+    "median",
+    "hit_rate",
+    "ci_low",
+    "ci_high",
+    "months",
+    "mean_gross_return",
+    "mean_benchmark_return",
+    "mean_cost",
+    "mean_excess_vs_reference",
+    "ended_early",
+)
+
+
+def store_base_rates(conn: Connection, rows: list[tuple], *, as_of: datetime, task_run_id: int) -> None:
+    """Replace every stored base rate with ``rows``, in one transaction."""
+    with conn.cursor() as cursor:
+        cursor.execute("DELETE FROM base_rates")
+        if rows:
+            execute_values(
+                cursor,
+                f"""
+                INSERT INTO base_rates (event_kind, event_key, scope, variant, horizon, {", ".join(_STAT_COLUMNS)},
+                                        as_of, task_run_id)
+                VALUES %s
+                """,
+                [
+                    (
+                        kind,
+                        key,
+                        scope,
+                        variant,
+                        horizon,
+                        *(stats[c] for c in _STAT_COLUMNS),
+                        as_of,
+                        task_run_id,
+                    )
+                    for kind, key, scope, variant, horizon, stats in rows
+                ],
+                page_size=1000,
+            )
+    conn.commit()
+
+
 _ITEM = re.compile(r"^[1-9]\.[0-9]{2}$")
 
 
 def compute_base_rates(run: TaskRun, conn: Connection, *, now: datetime | None = None) -> RunResult:
     """Task handler: run the calculator for one kind of event and record the report in the run's meta.
 
-    Payload: ``{"event": "insider_purchases", "exclude_10b5_1": false}`` or
-    ``{"event": "8k_items", "items": ["2.02"]}``. With an ``as_of_date`` the
+    Payload: ``{"event": "alerts"}`` (the daily run: every alert kind, by market and industry, stored
+    in ``base_rates``), ``{"event": "insider_purchases", "exclude_10b5_1": false}`` or
+    ``{"event": "8k_items", "items": ["2.02"]}`` (a report in the run's meta only). With an ``as_of_date`` the
     calculation is dated the start of that day in New York, as if run that morning.
     """
     kind = run.payload.get("event", "insider_purchases")
@@ -303,6 +427,16 @@ def compute_base_rates(run: TaskRun, conn: Connection, *, now: datetime | None =
     else:
         as_of = now or datetime.now(UTC)
     reader = AsOf(conn, as_of)
+    if kind == "alerts":
+        rows, summary = alert_base_rate_rows(reader)
+        store_base_rates(conn, rows, as_of=as_of, task_run_id=run.id)
+        LOGGER.info("base_rates_stored run_id=%d rows=%d", run.id, len(rows))
+        return RunResult(
+            status="succeeded",
+            fetched_count=sum(k["events"] for k in summary["kinds"].values()),
+            inserted_count=len(rows),
+            meta={"event": kind, "as_of": as_of.isoformat(), "rows": len(rows), **summary},
+        )
     if kind == "8k_items":
         items = run.payload.get("items")
         if not isinstance(items, list) or not items or not all(isinstance(i, str) and _ITEM.match(i) for i in items):

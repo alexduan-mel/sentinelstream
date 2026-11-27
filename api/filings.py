@@ -10,6 +10,7 @@ every link is classified and none is, and unclassified (null) until then. Its Sl
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
@@ -18,6 +19,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from alerts.base_rate import base_rates_for
 from api.db import DbConn
 from filings.edgar import sec_document_url, sec_index_url
 from filings.form_8k import item_title
@@ -248,6 +250,36 @@ class Form4Transaction(BaseModel):
     direct_indirect: Literal["D", "I"] | None
 
 
+class BaseRateStats(BaseModel):
+    """What similar past events were followed by, at one horizon (ADR 0015). Returns are fractions."""
+
+    n: int
+    mean: float  # average return after costs minus QQQ's
+    median: float
+    hit_rate: float  # share that beat QQQ after costs
+    ci_low: float | None  # 95% range for the average; None with too few months
+    ci_high: float | None
+    months: int
+    mean_gross_return: float
+    mean_benchmark_return: float
+    mean_cost: float
+    mean_excess_vs_reference: float | None  # against SPY
+    ended_early: int
+
+
+class BaseRate(BaseModel):
+    """The base rate for one high event in the filing (ADR 0018)."""
+
+    event_kind: Literal["insider_purchase", "8k_item"]
+    event_key: str
+    label: str
+    scope: Literal["industry", "market"]
+    scope_label: str
+    as_of: datetime
+    # Filter setting ("main": $5 and $1M a day; "none") → horizon in sessions → stats.
+    variants: dict[str, dict[str, BaseRateStats | None]]
+
+
 class FilingDetail(Filing):
     report_date: date | None
     primary_document: str | None
@@ -261,6 +293,8 @@ class FilingDetail(Filing):
     alert_latency_seconds: float | None
     issuers: list[FilingIssuer]
     form4_transactions: list[Form4Transaction]
+    # One per high event, for the subject company; empty for a low filing or before any are computed.
+    base_rates: list[BaseRate]
 
 
 def _number(value: Any) -> float | None:
@@ -319,6 +353,8 @@ def get_filing(accession_no: str, conn: DbConn) -> FilingDetail:
             )
             for t in cursor.fetchall()
         ]
+        subject = next((link for link in issuers if link.materiality == "high"), None)
+        rates = base_rates_for(conn, form_type=row[3], items=list(row[4] or []), cik=subject.cik) if subject else []
     filing = _filing(row)
     accepted_at: datetime = row[5]
     report_date, primary_document, first_seen_at, attempts = row[13], row[14], row[15], row[16]
@@ -337,4 +373,5 @@ def get_filing(accession_no: str, conn: DbConn) -> FilingDetail:
         alert_latency_seconds=(delivered_at - accepted_at).total_seconds() if delivered_at else None,
         issuers=issuers,
         form4_transactions=transactions,
+        base_rates=[BaseRate(**dataclasses.asdict(rate)) for rate in rates],
     )
