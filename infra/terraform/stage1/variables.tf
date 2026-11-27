@@ -69,9 +69,9 @@ variable "monthly_budget_usd" {
 }
 
 variable "budget_early_warning_usd" {
-  description = "Actual spend, before credits, that triggers an early warning email."
+  description = "Actual spend, before credits, that triggers an early warning email. Set above the expected ~US$19 a month, so it only fires when spend is out of line."
   type        = number
-  default     = 15
+  default     = 22
 }
 
 variable "snapshot_retention_days" {
