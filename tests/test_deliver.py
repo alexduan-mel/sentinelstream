@@ -230,3 +230,40 @@ def test_a_poll_whose_alert_could_not_be_sent_is_partial(connect_app_db, notifie
     assert result.status == "partial"
     assert f"{accession}: Slack answered HTTP 500: oops" in result.error_message
     assert _deliveries(conn)[accession][:2] == ("pending", 1)
+
+
+def test_an_alert_carries_its_base_rate_line_and_goes_out_without_one_if_the_lookup_fails(
+    connect_app_db, notifier, monkeypatch
+) -> None:
+    conn = connect_app_db()
+    _watch(conn)
+    _setup(conn)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO base_rates (event_kind, event_key, scope, variant, horizon, n, mean, median, hit_rate, "
+            "ci_low, ci_high, months, mean_gross_return, mean_benchmark_return, mean_cost, ended_early, as_of) "
+            "VALUES ('8k_item', '1.01', 'market', 'main', 20, 640, 0.004, 0.001, 0.51, -0.006, 0.014, 20, "
+            "0.02, 0.016, 0.003, 4, NOW())"
+        )
+        cursor.execute(
+            "INSERT INTO filings (accession_no, cik, form_type, items, filed_date, accepted_at, known_at) "
+            "VALUES ('0002130357-26-000011', %s, '8-K', '{1.01}', %s, %s, %s)",
+            (ANT_CIK, NOW.date(), NOW - timedelta(minutes=4), NOW - timedelta(minutes=4)),
+        )
+    conn.commit()
+    _link(conn, "0002130357-26-000011", ANT_CIK, "high")
+
+    _deliver(conn, notifier)
+    assert notifier.sent[0].history == (
+        "History: after 640 past 8-Ks with item 1.01 across all US-listed companies, the next 20 sessions "
+        "averaged +0.4% vs QQQ after costs; 51% beat QQQ (95% range -0.6% to +1.4%).",
+    )
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("base_rates unavailable")
+
+    monkeypatch.setattr("alerts.deliver.base_rates_for", broken)
+    _filing_row(conn, "0002130357-26-000012", accepted_at=NOW - timedelta(minutes=2))
+    _link(conn, "0002130357-26-000012", ANT_CIK, "high")
+    _deliver(conn, notifier)
+    assert notifier.sent[1].accession_no == "0002130357-26-000012" and notifier.sent[1].history == ()

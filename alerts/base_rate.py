@@ -56,6 +56,25 @@ class AlertBaseRate:
         return self.variants.get(variant, {}).get(str(horizon))
 
 
+def history_line(rate: AlertBaseRate) -> str | None:
+    """One plain sentence on what followed similar filings, from the 20-session main-filter result.
+
+    Describes history only, never what to do (ground rule 7). None without a 20-session result.
+    """
+    stats = rate.headline()
+    if stats is None:
+        return None
+    noun = "insider purchases" if rate.event_kind == "insider_purchase" else f"8-Ks with item {rate.event_key}"
+    where = "in the same broad industry" if rate.scope == "industry" else "across all US-listed companies"
+    line = (
+        f"History: after {stats['n']:,} past {noun} {where}, the next {REFERENCE_HORIZON} sessions averaged "
+        f"{stats['mean']:+.1%} vs QQQ after costs; {stats['hit_rate']:.0%} beat QQQ"
+    )
+    if stats["ci_low"] is not None and stats["ci_high"] is not None:
+        line += f" (95% range {stats['ci_low']:+.1%} to {stats['ci_high']:+.1%})"
+    return line + "."
+
+
 def alert_kinds(form_type: str, items: list[str]) -> list[tuple[str, str, str]]:
     """(kind, key, label) for each high event in a filing."""
     if form_type == "4":

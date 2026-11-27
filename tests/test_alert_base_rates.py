@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime
 
 import pytest
 
-from alerts.base_rate import MIN_INDUSTRY_EVENTS, alert_kinds, base_rates_for
+from alerts.base_rate import MIN_INDUSTRY_EVENTS, alert_kinds, base_rates_for, history_line
 from orchestration.task_runs import TaskRun, enqueue_run
 from research.base_rates import compute_base_rates, industry_scope
 from tests.test_base_rates import AFTER_ALL, SESSIONS, E, _bars, _market, _purchase, _rising
@@ -177,3 +178,29 @@ def test_the_alert_detail_carries_its_base_rate(seeded, signed_in_client) -> Non
     assert rate["variants"]["none"]["20"] is None
 
     assert signed_in_client.get("/api/filings/0001045810-26-000002").json()["base_rates"] == []
+
+
+# --- the Slack line --------------------------------------------------------------------------------
+
+
+def test_history_line_describes_what_followed_without_advice(connect_app_db) -> None:
+    conn = connect_app_db()
+    _issuer(conn, NVDA_CIK, "3674", "Semiconductors & Related Devices")
+    _rate(conn, "8k_item", "2.02", "sic2:36", 120, mean=-0.018)
+    _rate(conn, "insider_purchase", "", "market", 1977, mean=0.0085)
+    with conn.cursor() as cursor:
+        cursor.execute("UPDATE base_rates SET ci_low = NULL, ci_high = NULL WHERE event_kind = 'insider_purchase'")
+    conn.commit()
+
+    [results] = base_rates_for(conn, form_type="8-K", items=["2.02"], cik=NVDA_CIK)
+    assert history_line(results) == (
+        "History: after 120 past 8-Ks with item 2.02 in the same broad industry, the next 20 sessions averaged "
+        "-1.8% vs QQQ after costs; 55% beat QQQ (95% range -1.0% to +3.0%)."
+    )
+    [purchase] = base_rates_for(conn, form_type="4", items=[], cik=NVDA_CIK)
+    assert history_line(purchase) == (
+        "History: after 1,977 past insider purchases across all US-listed companies, the next 20 sessions "
+        "averaged +0.9% vs QQQ after costs; 55% beat QQQ."
+    )
+    no_twenty = dataclasses.replace(purchase, variants={"main": {"20": None}, "none": {}})
+    assert history_line(no_twenty) is None

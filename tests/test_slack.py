@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from datetime import UTC, datetime
 
@@ -146,3 +147,11 @@ def test_errors_never_contain_the_webhook_url() -> None:
     with pytest.raises(NotifierError) as error:
         echo.send(_alert())
     assert WEBHOOK not in str(error.value)
+
+
+def test_a_base_rate_line_follows_the_reasons_in_italics_and_stays_free_of_trading_language() -> None:
+    history = "History: after 1,977 past insider purchases across all US-listed companies, the next 20 sessions "
+    history += "averaged +0.9% vs QQQ after costs; 55% beat QQQ (95% range -0.4% to +2.1%)."
+    text = format_message(dataclasses.replace(_alert(), history=(history,)))
+    assert text.splitlines()[2] == f"_{history}_"
+    assert not {"buy", "sell", "hold", "recommend", "recommendation"} & set(text.lower().split())

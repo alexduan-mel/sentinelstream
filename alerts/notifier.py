@@ -35,6 +35,8 @@ class Alert:
     accepted_at: datetime
     sec_url: str
     issuers: tuple[AlertIssuer, ...]
+    # Plain-text base-rate lines (alerts.base_rate.history_line): what followed similar filings.
+    history: tuple[str, ...] = ()
 
     @property
     def tickers(self) -> list[str]:

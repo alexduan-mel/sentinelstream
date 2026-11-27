@@ -27,6 +27,7 @@ from typing import Any
 
 from psycopg2.extensions import connection as Connection
 
+from alerts.base_rate import base_rates_for, history_line
 from alerts.notifier import Alert, AlertIssuer, Notifier, NotifierConfigError, NotifierError
 from filings.edgar import sec_index_url
 
@@ -101,7 +102,7 @@ def _pending(conn: Connection, channel: str) -> list[Alert]:
         cursor.execute(
             """
             SELECT f.accession_no, f.form_type, f.accepted_at, f.cik,
-                   COALESCE(ticker.symbol, l.cik), l.materiality_reason
+                   COALESCE(ticker.symbol, l.cik), l.materiality_reason, f.items, l.cik
             FROM alert_deliveries d
             JOIN filings f USING (accession_no)
             JOIN filing_issuers l
@@ -121,7 +122,7 @@ def _pending(conn: Connection, channel: str) -> list[Alert]:
         rows = cursor.fetchall()
     conn.commit()
     alerts: dict[str, Alert] = {}
-    for accession_no, form_type, accepted_at, filing_cik, ticker, reason in rows:
+    for accession_no, form_type, accepted_at, filing_cik, ticker, reason, items, issuer_cik in rows:
         alert = alerts.get(accession_no)
         issuer = AlertIssuer(ticker=ticker, reason=reason)
         if alert is None:
@@ -131,10 +132,23 @@ def _pending(conn: Connection, channel: str) -> list[Alert]:
                 accepted_at=accepted_at,
                 sec_url=sec_index_url(filing_cik, accession_no),
                 issuers=(issuer,),
+                history=_history(conn, form_type, list(items or []), issuer_cik),
             )
         else:
             alerts[accession_no] = replace(alert, issuers=(*alert.issuers, issuer))
     return list(alerts.values())
+
+
+def _history(conn: Connection, form_type: str, items: list[str], cik: str) -> tuple[str, ...]:
+    """Base-rate lines for the alert's first high issuer (ADR 0018). Never stops an alert going out."""
+    try:
+        lines = [history_line(rate) for rate in base_rates_for(conn, form_type=form_type, items=items, cik=cik)]
+        conn.commit()
+    except Exception:  # noqa: BLE001 - the alert matters more than its history line
+        conn.rollback()
+        LOGGER.warning("alert_history_failed form=%s cik=%s", form_type, cik, exc_info=True)
+        return ()
+    return tuple(line for line in lines if line)
 
 
 def _record(conn: Connection, channel: str, accession_no: str, run_id: int | None, error: str | None) -> datetime:
