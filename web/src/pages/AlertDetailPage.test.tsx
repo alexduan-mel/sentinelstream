@@ -189,13 +189,13 @@ describe("AlertDetailPage", () => {
     ).toBeTruthy();
     const twenty = screen.getByText("20 sessions").closest("tr") as HTMLElement;
     expect(within(twenty).getByText("1,977")).toBeTruthy();
-    expect(within(twenty).getByText("+0.9%").className).toContain("text-positive");
+    expect(within(twenty).getByText("+0.9%").className).toContain("text-semantic-positive");
     expect(within(twenty).getByText("55%")).toBeTruthy();
-    expect(within(twenty).getByText("-0.4%").className).toContain("text-negative"); // range low
+    expect(within(twenty).getByText("-0.4%").className).toContain("text-semantic-negative"); // range low
     expect(within(twenty).getByText("+2.1%")).toBeTruthy();
     expect(within(twenty).getByText("-0.2%")).toBeTruthy(); // average cost
     const five = screen.getByText("5 sessions").closest("tr") as HTMLElement;
-    expect(within(five).getAllByText("-0.4%")[0].className).toContain("text-negative");
+    expect(within(five).getAllByText("-0.4%")[0].className).toContain("text-semantic-negative");
     // Too few months for a range: a dash, explained on hover.
     const sixty = screen.getByText("60 sessions").closest("tr") as HTMLElement;
     expect(within(sixty).queryByText(/to/)).toBeNull();
