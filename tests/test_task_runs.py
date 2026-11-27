@@ -167,6 +167,21 @@ def test_two_workers_run_different_tasks_in_parallel(connect_app_db) -> None:
     assert claim_a.run is not None and claim_b.run is not None
 
 
+def test_each_worker_claims_only_its_own_queue(connect_app_db) -> None:
+    conn = connect_app_db()
+    with conn.cursor() as cursor:
+        cursor.execute("UPDATE task_definitions SET queue = 'research' WHERE task_id = %s", (OTHER_TASK,))
+    conn.commit()
+    research = _enqueue(conn, OTHER_TASK)
+    default = _enqueue(conn, TASK)
+
+    assert claim_next_run(conn, worker_instance="r", queue="research").run_id == research
+    assert claim_next_run(conn, worker_instance="r", queue="research") is None
+    # The default worker never picks up research, however long it has waited.
+    assert claim_next_run(conn, worker_instance="w").run_id == default
+    assert claim_next_run(conn, worker_instance="w") is None
+
+
 def test_run_of_a_task_disabled_after_enqueue_is_skipped(connect_app_db) -> None:
     conn = connect_app_db()
     run_id = _enqueue(conn)

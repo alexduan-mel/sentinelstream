@@ -36,17 +36,19 @@ flowchart LR
     api[api<br/>FastAPI + built React UI]
     sched[scheduler<br/>enqueues due runs]
     worker[worker<br/>claims and runs tasks]
+    research[research-worker<br/>base-rate calculations]
     pg[(Postgres 16<br/>on EBS volume)]
     api --> pg
     sched --> pg
     worker --> pg
+    research --> pg
   end
 
   ecr -->|pull| ec2
   ssm[(SSM Parameter Store<br/>secrets)] -->|env at deploy time| ec2
   ec2 -->|container logs| cw[CloudWatch Logs<br/>+ task_run_failed alarm]
   worker -->|rate-limited, Retry-After| sec[SEC EDGAR<br/>filings, Form 4 XML, XBRL]
-  worker --> massive[Massive<br/>daily bars, ticker details]
+  worker --> massive[Massive<br/>daily bars, market-wide bars,<br/>splits, ticker details]
   worker -->|high filings, once each| slack[Slack webhook]
   api -->|check a ticker before adding it| sec
   you([Investor]) -->|SSM port forward| api
@@ -54,9 +56,10 @@ flowchart LR
 
 - **All background work goes through `task_runs`** ([ADR 0003](docs/decisions/0003-scheduler-and-worker.md)). The scheduler only enqueues. The worker claims runs with `FOR UPDATE SKIP LOCKED` and holds a per-task advisory lock, so an overlapping run ends `skipped`. The "Run now" button and the CLI insert the same `pending` rows, and the API answers 202.
 - **Every fact row carries `known_at`,** the time it became public: EDGAR acceptance for filings, the 16:00 ET close for daily bars. Writes upsert on stable business keys, so every job is safe to rerun ([ADR 0002](docs/decisions/0002-baseline-data-model.md), [ADR 0004](docs/decisions/0004-sec-filings-ingestion.md), [ADR 0006](docs/decisions/0006-edgar-acceptance-time-is-utc.md)). Research code reads facts only through one as-of reader, which returns rows with `known_at` strictly before the study's date; tests prove it never looks ahead ([ADR 0011](docs/decisions/0011-as-of-data-access.md)).
-- **Market-wide prices for research** ([ADR 0012](docs/decisions/0012-market-wide-daily-bars.md)). One request per trading day loads every US stock's daily bar, as traded rather than split-adjusted, including stocks that later delist. Two years are backfilled a few days per run, oldest first, so the single worker never holds up the 5-minute SEC poll.
+- **Market-wide prices for research** ([ADR 0012](docs/decisions/0012-market-wide-daily-bars.md)). One request per trading day loads every US stock's daily bar, as traded rather than split-adjusted, including stocks that later delist. Two years are backfilled a few days per run, oldest first, so the worker never holds up the 5-minute SEC poll.
 - **Splits are data, not guesses** ([ADR 0013](docs/decisions/0013-stock-splits.md)). A daily job loads every US stock split. Research uses them to compare as-traded prices across a split, and when a watchlist ticker splits, the job queues a re-fetch of its split-adjusted history.
 - **Insider trades market-wide, from SEC's own datasets** ([ADR 0014](docs/decisions/0014-insider-transactions-data-sets.md)). Every Form 3, 4 and 5 transaction from the last two years comes from SEC's quarterly Insider Transactions Data Sets, a few quarters per run. Each counts as public from the end of its filing date, since the datasets carry no acceptance time.
+- **Base rates are averages over history, not predictions** ([ADR 0015](docs/decisions/0015-base-rate-calculator.md)). For every past event of a kind (so far, insider open-market purchases), the calculator buys at the first close after the event became public, sells 1, 5, 20 and 60 sessions later, takes off trading costs (0.10% a trade, or half the stock's estimated spread if wider), and compares with QQQ, showing SPY too. It reports sample size, average, median, the share that beat QQQ and a 95% range, with and without the $5 and $1M-a-day filters. It runs on its own `research-worker`, so it never holds up the SEC poll ([ADR 0016](docs/decisions/0016-research-worker.md)).
 - **Data providers are treated politely.** SEC requests carry a declared User-Agent and are rate-limited on the client side. Every HTTP call retries with exponential backoff and honours `Retry-After`. A missing credential fails the run with a clear error instead of falling back to placeholder data.
 - **Alerts are decided by plain rules, per company** ([ADR 0007](docs/decisions/0007-filing-issuer-links.md), [ADR 0008](docs/decisions/0008-materiality-rules-v0.md)). A filing is linked to every watchlist company EDGAR lists it under. It is high for a company when it is an 8-K with item 1.01, 2.02, 4.02 or 5.02 from a domestic filer, or a Form 4 open-market purchase of that company's shares, read from the Form 4 XML. Everything else is low and only shown in the UI.
 - **Each high filing reaches Slack once** ([ADR 0009](docs/decisions/0009-slack-notifier.md)). An outbox keyed on accession number and channel deduplicates. History and stale filings are never pushed. Delivery happens in the same 5-minute poll that found the filing, and each alert records how long it took from EDGAR acceptance.
@@ -87,7 +90,7 @@ Requires Docker, [uv](https://docs.astral.sh/uv/) and Node 22.
 
 ```sh
 cp .env.example .env             # then set AUTH_SESSION_SECRET and AUTH_ADMIN_PASSWORD
-docker compose up --build        # Postgres 16, then api (web UI on http://127.0.0.1:8000), scheduler and worker
+docker compose up --build        # Postgres 16, then api (web UI on http://127.0.0.1:8000), scheduler, worker and research-worker
 curl http://127.0.0.1:8000/healthz
 ```
 
@@ -128,7 +131,7 @@ Every push to `main` that passes CI deploys automatically ([`deploy.yml`](.githu
 
 1. Build the arm64 image natively and push it to ECR, tagged with the full commit SHA.
 2. Send [`infra/deploy/deploy.sh`](infra/deploy/deploy.sh) and the Compose files to the EC2 host with SSM Run Command.
-3. On the host: load secrets from SSM Parameter Store into a tmpfs env file, check the EBS data volume is mounted, run `docker compose up --wait` (each app container applies pending migrations as it starts, and api, scheduler and worker must all report healthy), and require `/healthz` to report the new SHA. If it doesn't, the previous image is started again.
+3. On the host: load secrets from SSM Parameter Store into a tmpfs env file, check the EBS data volume is mounted, run `docker compose up --wait` (each app container applies pending migrations as it starts, and every app service must report healthy), and require `/healthz` to report the new SHA. If it doesn't, the previous image is started again.
 
 AWS access is OIDC only, with no stored keys. To roll back, run the **Deploy** workflow by hand with an older commit SHA. Its image is still in ECR, so nothing is rebuilt.
 

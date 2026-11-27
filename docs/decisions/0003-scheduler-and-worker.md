@@ -32,3 +32,7 @@ Ground rule 4 also requires that all background work go through `task_runs`, tha
 - Handlers own their transactions and must stay idempotent (ground rule 3), because a run cut off by a deploy is failed and the task runs again later.
 - Session advisory locks are re-entrant, so the code unlocks exactly once per successful `try_lock`. Lock names share one `hashtext` key space with the migration runner's lock, so a name collision is possible but very unlikely.
 - Rolling back to an image built before this change would fail: the Compose files now start `orchestration.scheduler` and `orchestration.worker`, which older images do not contain. This applies only to the first deploy of this change.
+
+## Update, 27 Nov 2026
+
+A second worker, `research-worker`, now serves a separate queue for long research calculations, so they never hold up the SEC poll ([ADR 0016](0016-research-worker.md)). Claiming, locks and reconciliation are unchanged.

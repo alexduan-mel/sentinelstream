@@ -5,11 +5,13 @@ scheduler only enqueues and this separate service executes (ADR 0003). Each clai
 task's advisory lock on the worker's control connection until it finishes, which is how the
 scheduler's reconciliation tells a live run from one whose worker died.
 
-Run with ``python -m orchestration.worker``.
+Run with ``python -m orchestration.worker [--queue default|research]``. Each worker serves one queue:
+``default`` for ingestion, alerts and onboarding, ``research`` for long calculations (ADR 0016).
 """
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import socket
@@ -21,7 +23,7 @@ from psycopg2.extensions import connection as Connection
 
 from orchestration import db, service
 from orchestration.handlers import HANDLERS, Handler
-from orchestration.task_runs import TERMINAL_STATUSES, RunResult, TaskRun, claim_next_run, finish_run
+from orchestration.task_runs import QUEUES, TERMINAL_STATUSES, RunResult, TaskRun, claim_next_run, finish_run
 
 LOGGER = logging.getLogger(__name__)
 
@@ -61,9 +63,10 @@ def process_next(
     connect: Callable[[], Connection],
     instance: str,
     heartbeat: service.Heartbeat | None = None,
+    queue: str = "default",
 ) -> bool:
-    """Claim and process one pending run. False if nothing was pending."""
-    claim = claim_next_run(conn, worker_instance=instance)
+    """Claim and process one pending run from ``queue``. False if nothing was pending."""
+    claim = claim_next_run(conn, worker_instance=instance, queue=queue)
     if claim is None:
         return False
     if claim.run is None:
@@ -85,20 +88,32 @@ def work(
     connect: Callable[[], Connection],
     poll_seconds: float,
     heartbeat: service.Heartbeat,
+    queue: str = "default",
 ) -> None:
     """Process runs until ``stop`` is set, sleeping ``poll_seconds`` whenever the queue is empty.
 
     A stop request lets the current run finish; Compose gives the worker a grace period for that.
     """
     instance = worker_instance()
-    LOGGER.info("worker_started instance=%s poll_seconds=%g handlers=%s", instance, poll_seconds, ",".join(handlers))
+    LOGGER.info(
+        "worker_started instance=%s queue=%s poll_seconds=%g handlers=%s",
+        instance,
+        queue,
+        poll_seconds,
+        ",".join(handlers),
+    )
     while not stop.is_set():
         heartbeat.beat()
-        if not process_next(conn, handlers=handlers, connect=connect, instance=instance, heartbeat=heartbeat):
+        if not process_next(
+            conn, handlers=handlers, connect=connect, instance=instance, heartbeat=heartbeat, queue=queue
+        ):
             stop.wait(poll_seconds)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Claim and run pending task runs from one queue.")
+    parser.add_argument("--queue", choices=QUEUES, default="default")
+    queue = parser.parse_args(argv).queue
     service.configure_logging()
     poll_seconds = service.env_seconds("WORKER_POLL_SECONDS", DEFAULT_POLL_SECONDS, minimum=1)
     stop = service.stop_on_signals()
@@ -110,7 +125,13 @@ def main() -> int:
     return service.run_with_reconnect(
         "worker",
         lambda conn: work(
-            conn, stop, handlers=HANDLERS, connect=connect_job, poll_seconds=poll_seconds, heartbeat=heartbeat
+            conn,
+            stop,
+            handlers=HANDLERS,
+            connect=connect_job,
+            poll_seconds=poll_seconds,
+            heartbeat=heartbeat,
+            queue=queue,
         ),
         stop,
         retry_seconds=poll_seconds,

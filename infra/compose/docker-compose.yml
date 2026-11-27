@@ -1,7 +1,7 @@
 # Base Compose file shared by local development and the EC2 host.
 # Run from the repo root with `docker compose up --build` (compose.yaml includes this file).
 
-# api, scheduler and worker run the same image (ADR 0001); only the command differs. Locally each
+# api, scheduler, worker and research-worker run the same image (ADR 0001); only the command differs. Locally each
 # service tags its own build of it (one shared tag would make the parallel builds collide); the
 # layers come from one cache. On EC2 the prod file points all three at the same ECR image.
 x-app: &app
@@ -48,6 +48,20 @@ services:
     # scheduler's reconciliation, and the task's next run proceeds as normal.
     stop_grace_period: 60s
     # The heartbeat is touched between claims and every 15 s during a run.
+    healthcheck:
+      test: ["CMD", "python", "-m", "orchestration.healthcheck", "--max-age", "60"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      start_interval: 2s
+      retries: 3
+
+  # Runs long research calculations, so they never hold up the SEC poll on `worker` (ADR 0016).
+  # It calls no data provider, so the two workers never compete for SEC's or Massive's limits.
+  research-worker:
+    <<: *app
+    command: ["python", "-m", "orchestration.worker", "--queue", "research"]
+    stop_grace_period: 60s
     healthcheck:
       test: ["CMD", "python", "-m", "orchestration.healthcheck", "--max-age", "60"]
       interval: 15s

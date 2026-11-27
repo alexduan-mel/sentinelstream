@@ -116,7 +116,10 @@ def list_tasks(conn: DbConn) -> list[TaskDefinition]:
         TaskDefinition(
             task_id=row[0],
             label=row[1],
-            schedule_label=schedule_label(row[2], row[3], row[4], row[5], row[6]),
+            # A manual task's schedule columns are placeholders the table requires; it runs on demand.
+            schedule_label=(
+                schedule_label(row[2], row[3], row[4], row[5], row[6]) if row[7] == "automatic" else "On demand"
+            ),
             trigger_mode=row[7],
             enabled=row[8],
             # Manual tasks are never scheduled, whatever the column holds.

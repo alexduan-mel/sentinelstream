@@ -133,8 +133,14 @@ def enqueue_run(
     raise TaskDisabledError(f"Task {task_id!r} is disabled")
 
 
-def claim_next_run(conn: Connection, *, worker_instance: str) -> Claim | None:
-    """Take the oldest pending run and commit. None if nothing is pending.
+QUEUES = ("default", "research")
+
+
+def claim_next_run(conn: Connection, *, worker_instance: str, queue: str = "default") -> Claim | None:
+    """Take the oldest pending run on ``queue`` and commit. None if nothing is pending there.
+
+    Each task belongs to one queue (``task_definitions.queue``), and each worker serves one, so a long
+    research calculation never holds up the SEC poll (ADR 0016).
 
     On success this session holds the task's advisory lock, taken before the run is marked
     ``running``, and the caller must release it with ``finish_run``. If another session holds the
@@ -142,16 +148,19 @@ def claim_next_run(conn: Connection, *, worker_instance: str) -> Claim | None:
     """
     try:
         with conn.cursor() as cursor:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT tr.id, tr.task_id, tr.trace_id::text, tr.trigger_source, tr.run_mode, tr.requested_by,
                        tr.tickers, tr.as_of_date, tr.force_refresh, tr.meta, td.enabled
                 FROM task_runs tr
                 JOIN task_definitions td ON td.task_id = tr.task_id
-                WHERE tr.status = 'pending'
+                WHERE tr.status = 'pending' AND td.queue = %s
                 ORDER BY tr.created_at, tr.id
                 LIMIT 1
                 FOR UPDATE OF tr SKIP LOCKED
-                """)
+                """,
+                (queue,),
+            )
             row = cursor.fetchone()
             if row is None:
                 conn.commit()
