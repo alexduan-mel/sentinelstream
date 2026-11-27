@@ -311,3 +311,10 @@ def test_env_seconds_rejects_bad_values(monkeypatch) -> None:
         service.env_seconds("WORKER_POLL_SECONDS", 5, minimum=1)
     monkeypatch.setenv("WORKER_POLL_SECONDS", "2.5")
     assert service.env_seconds("WORKER_POLL_SECONDS", 5, minimum=1) == 2.5
+
+
+def test_worker_refuses_an_unknown_queue() -> None:
+    from orchestration import worker
+
+    with pytest.raises(SystemExit):
+        worker.main(["--queue", "everything"])
