@@ -58,6 +58,41 @@ class Event:
     value: float  # dollars bought, summed over the day's transactions
 
 
+# Exchanges whose stocks are in Massive's market-wide bars; over-the-counter ones are not.
+_LISTED_EXCHANGES = {"NYSE", "Nasdaq", "NYSE American", "NYSE Arca", "CBOE", "BATS"}
+
+
+def listed_symbol(tickers: tuple[str, ...], exchanges: tuple[str, ...]) -> str | None:
+    """The first ticker SEC lists on a US exchange; None if all are over the counter or unknown."""
+    for ticker, exchange in zip(tickers, exchanges, strict=False):
+        if exchange in _LISTED_EXCHANGES:
+            return clean_symbol(ticker)
+    return None
+
+
+def eight_k_events(reader: AsOf, items: list[str] | tuple[str, ...]) -> list[Event]:
+    """Original 8-Ks carrying any of ``items``, one event per company and filing date.
+
+    The symbol is the company's listed ticker as SEC lists it now: SEC's submissions give no
+    history of tickers. A company that changed ticker since is unmatched, not mismatched, unless
+    its old ticker went to another company; the report's match counts show how many.
+    """
+    days: dict[tuple[str, date], Event] = {}
+    for filing in reader.market_8k_filings(items=list(items)):
+        key = (filing.cik, filing.filed_date)
+        if key in days:
+            continue  # the earliest is kept: filings come oldest first
+        days[key] = Event(
+            issuer_cik=filing.cik,
+            symbol=listed_symbol(filing.tickers, filing.exchanges),
+            event_date=filing.filed_date,
+            known_at=filing.known_at,
+            label=f"{filing.name or filing.cik} 8-K {','.join(i for i in filing.items if i in items)}",
+            value=0.0,
+        )
+    return sorted(days.values(), key=lambda e: (e.known_at, e.issuer_cik))
+
+
 def insider_purchase_events(
     reader: AsOf,
     *,

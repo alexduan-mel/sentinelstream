@@ -7,7 +7,8 @@ Research code reads stored facts only through :class:`AsOf`. Every query it runs
   (split-adjusted) and market-wide bars (as traded) alike,
 - a stock split from the start of its execution day in New York,
 - a filing, and the Form 4 rows and XBRL values it carries, from EDGAR acceptance;
-- a market-wide insider transaction from SEC's quarterly datasets, from the end of its filing date.
+- a market-wide insider transaction from SEC's quarterly datasets, from the end of its filing date;
+- a market-wide 8-K, from EDGAR acceptance.
 
 The comparison is strict. A filing accepted at 16:05:00 is not visible at ``as_of`` 16:05:00.
 
@@ -36,6 +37,8 @@ FACT_TABLES = (
     "form4_transactions",
     "insider_filings",
     "insider_transactions",
+    "market_8k_filings",
+    "market_issuers",
     "xbrl_facts",
 )
 
@@ -146,6 +149,23 @@ class InsiderTransaction:
     shares_owned_after: float | None
     direct_indirect: str | None
     known_at: datetime
+
+
+@dataclass(frozen=True)
+class MarketEightK:
+    """A market-wide 8-K (ADR 0017). The company's name, tickers and industry are as last read, not as filed."""
+
+    accession_no: str
+    cik: str
+    form_type: str
+    items: tuple[str, ...]
+    filed_date: date
+    accepted_at: datetime
+    known_at: datetime
+    name: str | None
+    tickers: tuple[str, ...]
+    exchanges: tuple[str, ...]
+    sic: str | None
 
 
 @dataclass(frozen=True)
@@ -356,6 +376,41 @@ class AsOf:
             order_by="f.known_at, t.accession_no, t.line_sk",
         )
         return [InsiderTransaction(*row) for row in rows]
+
+    def market_8k_filings(
+        self,
+        *,
+        items: tuple[str, ...] | list[str] | None = None,
+        cik: str | None = None,
+        form_types: tuple[str, ...] | list[str] = ("8-K",),
+        since: datetime | None = None,
+    ) -> list[MarketEightK]:
+        """Market-wide 8-Ks accepted before ``as_of``, oldest first; with ``items``, those carrying any of them."""
+        where = ["e.form_type = ANY(%(forms)s)"]
+        params: dict[str, Any] = {"forms": list(form_types)}
+        if items is not None:
+            where.append("e.items && %(items)s::text[]")
+            params["items"] = list(items)
+        if cik is not None:
+            where.append("e.cik = %(cik)s")
+            params["cik"] = cik
+        if since is not None:
+            where.append("e.known_at >= %(since)s")
+            params["since"] = since
+        rows = self._select(
+            "SELECT e.accession_no, e.cik, e.form_type, e.items, e.filed_date, e.accepted_at, e.known_at, "
+            "i.name, i.tickers, i.exchanges, i.sic FROM market_8k_filings e JOIN market_issuers i ON i.cik = e.cik",
+            "e.known_at",
+            where,
+            params,
+            order_by="e.known_at, e.accession_no",
+        )
+        return [
+            MarketEightK(
+                acc, cik_, form, tuple(its or ()), filed, accepted, known, name, tuple(tks or ()), tuple(exs or ()), sic
+            )
+            for acc, cik_, form, its, filed, accepted, known, name, tks, exs, sic in rows
+        ]
 
     def xbrl_facts(self, cik: str, concept: str, *, unit: str | None = None) -> list[XbrlFact]:
         """Every value filed for ``concept`` before ``as_of``, restated ones included, oldest first."""

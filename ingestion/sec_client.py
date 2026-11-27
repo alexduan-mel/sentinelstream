@@ -27,6 +27,7 @@ SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
 SUBMISSIONS_PAGE_URL = "https://data.sec.gov/submissions/{name}"
 COMPANY_FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
 ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{folder}/{name}"
+FULL_INDEX_URL = "https://www.sec.gov/Archives/edgar/full-index/{year}/QTR{quarter}/form.idx"
 INSIDER_DATASETS_URL = "https://www.sec.gov/data-research/sec-markets-data/insider-transactions-data-sets"
 REQUESTS_PER_SECOND = 5
 MAX_RESPONSE_BYTES = 20_000_000
@@ -134,6 +135,15 @@ class SecClient:
             raise ValueError(f"not a plain file name: {name!r}")
         url = ARCHIVE_URL.format(cik=int(cik), folder=accession_no.replace("-", ""), name=name)
         return self._get(url).content
+
+    def full_index(self, year: int, quarter: int) -> str:
+        """EDGAR's full index of one quarter's filings by form type (``form.idx``, about 50 MB).
+
+        Fixed-width text, one filing per line: form type, company name, CIK, date filed, file name.
+        """
+        if not 1993 <= year <= 2100 or quarter not in (1, 2, 3, 4):
+            raise ValueError(f"not an EDGAR quarter: {year} Q{quarter}")
+        return self._get(FULL_INDEX_URL.format(year=year, quarter=quarter), max_bytes=MAX_DATASET_BYTES).text
 
     def insider_dataset_links(self) -> dict[str, str]:
         """Quarter (``2025q3``) -> URL of each Insider Transactions Data Set listed on SEC's index page.
