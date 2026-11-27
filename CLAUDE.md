@@ -4,23 +4,26 @@ SentinelStream (SS) is a personal research assistant for a long-horizon US stock
 
 Read `docs/PRD.md` for the full product spec and milestones. This file is the working agreement for anyone (human or agent) writing code here.
 
-## Current milestone: M1, alerts live (30 Nov – 13 Dec 2026)
+## Current milestone: M2, evidence harness (14 Dec 2026 – 10 Jan 2027)
 
-M0 (showcase repo on AWS) is done: CI with gitleaks, Terraform stage 1, auto-deploy to EC2, scheduler and worker, SEC and price ingestion, sign-in, Tasks and a read-only Alerts list.
+M2 gives every high alert a base rate: how stocks moved, compared with QQQ, after similar past events. It is done when every box is ticked:
 
-M1 is done when every box is ticked:
+- [x] As-of access layer: research code reads facts only through `research/asof.py`, which enforces `known_at < as_of`; tests prove lookahead is blocked (ADR 0011)
+- [ ] Market-wide daily bars for US-listed operating companies, two years back, backfilled in chunks that never hold up the SEC poll, then updated daily
+- [ ] Market-wide insider purchases (Form 4 code P) from SEC's Insider Transactions Data Sets
+- [ ] Base-rate calculator: returns 1, 5, 20 and 60 sessions after an event, compared with QQQ (SPY shown), after 0.10% costs per trade, with sample size, median, average, hit rate and a confidence range
+- [ ] Insider-buying effect reproduced: a write-up in `docs/` with the result, whichever way it comes out
+- [ ] Market-wide 8-K item history
+- [ ] A base rate on each high alert, on the Alert detail page and in Slack, pooled across similar stocks when the sample is small
+- [ ] Split detection: a daily check of Massive's splits endpoint triggers a re-fetch (promised in ADR 0002)
 
-- [x] SEC poller runs automatically every 5 minutes (forward migration, not an edit to `001_baseline.sql`)
-- [x] Filing-to-issuer link: a filing listed in several watchlist issuers' submissions is linked to each of them, so alerts route to the subject company
-- [x] Materiality rules v0, branching on filer type: 8-K items 1.01, 2.02, 4.02 and 5.02, plus Form 4 open-market purchases (code P, read from the Form 4 XML), are high; everything else is low
-- [x] Slack notifier behind a notifier interface: high items only, a link to the filing, deduplicated by accession number; the webhook URL lives in SSM Parameter Store
-- [x] Alerts page shows materiality, Slack delivery and when the poller last ran
-- [x] Failed runs emit the `task_run_failed` log line that the existing CloudWatch alarm watches
-- [x] Ticker onboarding job (pending → backfilling → ready) and the Watchlist page
-- [x] Alert detail page
+Next milestone after M2 is **M3: Explain** (see `docs/PRD.md`).
+
+### M1, alerts live: one box left
+
+M1 is built: the SEC poller every 5 minutes, filing-to-issuer links, materiality rules v0, the Slack notifier, the Alerts, Alert detail and Watchlist pages, ticker onboarding and the `task_run_failed` alarm line. Its last box waits for a watchlist company to file a qualifying 8-K (owner's decision, 27 Nov 2026). Tick it when that happens:
+
 - [ ] A real 8-K from a watchlist company reaches Slack within 10 minutes of EDGAR acceptance, checked from stored acceptance and delivery times
-
-Next milestone after M1 is **M2: Evidence harness** (see `docs/PRD.md`). M2 work may start now: everything in M1 is built, and its last box only waits for a watchlist company to file a qualifying 8-K (owner's decision, 27 Nov 2026). Tick that box when it happens.
 
 ## Architecture (stage 1)
 

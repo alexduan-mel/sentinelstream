@@ -53,7 +53,7 @@ flowchart LR
 ```
 
 - **All background work goes through `task_runs`** ([ADR 0003](docs/decisions/0003-scheduler-and-worker.md)). The scheduler only enqueues. The worker claims runs with `FOR UPDATE SKIP LOCKED` and holds a per-task advisory lock, so an overlapping run ends `skipped`. The "Run now" button and the CLI insert the same `pending` rows, and the API answers 202.
-- **Every fact row carries `known_at`,** the time it became public: EDGAR acceptance for filings, the 16:00 ET close for daily bars. Writes upsert on stable business keys, so every job is safe to rerun ([ADR 0002](docs/decisions/0002-baseline-data-model.md), [ADR 0004](docs/decisions/0004-sec-filings-ingestion.md), [ADR 0006](docs/decisions/0006-edgar-acceptance-time-is-utc.md)).
+- **Every fact row carries `known_at`,** the time it became public: EDGAR acceptance for filings, the 16:00 ET close for daily bars. Writes upsert on stable business keys, so every job is safe to rerun ([ADR 0002](docs/decisions/0002-baseline-data-model.md), [ADR 0004](docs/decisions/0004-sec-filings-ingestion.md), [ADR 0006](docs/decisions/0006-edgar-acceptance-time-is-utc.md)). Research code reads facts only through one as-of reader, which returns rows with `known_at` strictly before the study's date; tests prove it never looks ahead ([ADR 0011](docs/decisions/0011-as-of-data-access.md)).
 - **Data providers are treated politely.** SEC requests carry a declared User-Agent and are rate-limited on the client side. Every HTTP call retries with exponential backoff and honours `Retry-After`. A missing credential fails the run with a clear error instead of falling back to placeholder data.
 - **Alerts are decided by plain rules, per company** ([ADR 0007](docs/decisions/0007-filing-issuer-links.md), [ADR 0008](docs/decisions/0008-materiality-rules-v0.md)). A filing is linked to every watchlist company EDGAR lists it under. It is high for a company when it is an 8-K with item 1.01, 2.02, 4.02 or 5.02 from a domestic filer, or a Form 4 open-market purchase of that company's shares, read from the Form 4 XML. Everything else is low and only shown in the UI.
 - **Each high filing reaches Slack once** ([ADR 0009](docs/decisions/0009-slack-notifier.md)). An outbox keyed on accession number and channel deduplicates. History and stale filings are never pushed. Delivery happens in the same 5-minute poll that found the filing, and each alert records how long it took from EDGAR acceptance.
@@ -69,7 +69,7 @@ Other decisions are recorded in [`docs/decisions/`](docs/decisions).
 | --- | --- | --- |
 | **M0** Showcase repo on AWS | Done, Nov 2026 | CI with gitleaks, Terraform for stage 1, auto-deploy to EC2 on merge, scheduler and worker, SEC filings and daily price ingestion, sign-in, the Tasks page, and a read-only Alerts list of stored filings |
 | **M1** Alerts live | Built; waiting on a live 8-K | Materiality rules v0 (8-K items 1.01, 2.02, 4.02, 5.02 and Form 4 open-market purchases), Slack alerts deduplicated by accession number, ticker onboarding with the Watchlist page, materiality and Slack delivery on the Alerts page, an Alert detail page with acceptance-to-Slack timing, and the `task_run_failed` alarm. The last check, a real watchlist 8-K reaching Slack within 10 minutes of EDGAR acceptance, waits for one to be filed |
-| **M2** Evidence harness | Planned | As-of data access with tests proving lookahead is blocked, event studies with costs, and a base rate (with sample size) on every alert |
+| **M2** Evidence harness | In progress | As-of data access with tests proving lookahead is blocked, event studies with costs, and a base rate (with sample size) on every alert |
 | **M3** Explain | Planned | XBRL fundamentals and a year-over-year 10-K diff with citations to filing sections |
 | **M4** Journal | Planned | Decision ledger, and returns against QQQ split into alpha and beta |
 | AWS stage 2 | Optional | RDS, ECS Fargate, S3 and CloudFront |
@@ -143,7 +143,8 @@ Infrastructure, and how to reach the host and the UI over SSM, is in [`infra/ter
 | `orchestration/` | Scheduler, task runs, locks, dispatch, migrations |
 | `alerts/` | Materiality rules, classification, the Slack notifier and its outbox |
 | `filings/` | 8-K item titles, Form 4 XML, XBRL company facts, EDGAR links |
-| `research/`, `ledger/` | Later milestones (M2, M4) |
+| `research/` | Point-in-time (as-of) data access for the base-rate calculator (M2) |
+| `ledger/` | Decision ledger (M4) |
 | `api/` | FastAPI app; also serves the built web UI |
 | `web/` | React + TypeScript frontend |
 | `infra/` | Terraform, Compose files, SQL migrations |
