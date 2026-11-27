@@ -14,11 +14,40 @@ describe("parseGlossary", () => {
         id: "sec-and-filings",
         title: "SEC and filings",
         terms: [
-          { id: "cik", term: "CIK", paragraphs: ["SEC's ID.", "Second paragraph."] },
-          { id: "8-k-item", term: "8-K item", paragraphs: ["Numbered **sections**."] }
+          { id: "cik", term: "CIK", paragraphs: ["SEC's ID.", "Second paragraph."], seeAlso: [] },
+          { id: "8-k-item", term: "8-K item", paragraphs: ["Numbered **sections**."], seeAlso: [] }
         ]
       }
     ]);
+  });
+
+  it("reads Short for, Example and See also as fields", () => {
+    const glossary = parseGlossary(
+      "## S\n\n### CIK\n**Short for:** Central Index Key\n\nSEC's ID.\n\n**Example:** `0001045810`.\n\n" +
+        "**See also:** Ticker; pushed, queued and skipped.\n\n### Ticker\nA symbol.\n\n" +
+        "### Pushed, Queued and Skipped\nSlack states.\n"
+    );
+    const [cik] = glossary.sections[0].terms;
+    expect(cik).toEqual({
+      id: "cik",
+      term: "CIK",
+      shortFor: "Central Index Key",
+      paragraphs: ["SEC's ID."],
+      example: "`0001045810`.",
+      seeAlso: [
+        { id: "ticker", term: "Ticker" },
+        { id: "pushed-queued-and-skipped", term: "Pushed, Queued and Skipped" }
+      ]
+    });
+  });
+
+  it("rejects a See also that names no term, or the term itself", () => {
+    expect(() => parseGlossary("## S\n\n### CIK\nID.\n\n**See also:** Tickr\n")).toThrow(
+      "names no term: Tickr"
+    );
+    expect(() => parseGlossary("## S\n\n### CIK\nID.\n\n**See also:** CIK\n")).toThrow(
+      "names itself"
+    );
   });
 
   it.each([
@@ -60,6 +89,9 @@ describe("docs/glossary.md", () => {
     ]);
     expect(terms.length).toBeGreaterThan(50);
     expect(terms.every((term) => term.paragraphs.length > 0)).toBe(true);
+    // Abbreviations say what they stand for; most terms link onwards.
+    expect(terms.find((term) => term.id === "cik")?.shortFor).toBe("Central Index Key");
+    expect(terms.filter((term) => term.seeAlso.length > 0).length).toBeGreaterThan(50);
     expect(new Set(terms.map((term) => term.id)).size).toBe(terms.length);
   });
 
@@ -87,6 +119,10 @@ describe("docs/glossary.md", () => {
     );
     expect(filterGlossary(glossary, "director officer").length).toBeGreaterThan(0);
     expect(filterGlossary(glossary, "zzzz")).toEqual([]);
+    // Expansions and examples are searched too.
+    expect(
+      filterGlossary(glossary, "central index").flatMap((s) => s.terms.map((t) => t.id))
+    ).toContain("cik");
     expect(filterGlossary(glossary, "  ")).toBe(glossary.sections);
   });
 });

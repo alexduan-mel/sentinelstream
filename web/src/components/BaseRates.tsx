@@ -26,7 +26,7 @@ const count = new Intl.NumberFormat("en-US");
 export function Return({ value }: { value: number | null }) {
   if (value === null) return <Typography.Text type="secondary">{EMPTY}</Typography.Text>;
   const text = signed.format(value);
-  const color = value > 0 ? "text-positive" : value < 0 ? "text-negative" : "";
+  const color = value > 0 ? "text-semantic-positive" : value < 0 ? "text-semantic-negative" : "";
   return <span className={color}>{text}</span>;
 }
 
