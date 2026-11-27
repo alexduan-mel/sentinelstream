@@ -33,9 +33,15 @@ variable "deploy_branch" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type. Must be arm64 (Graviton) to match the image. Move up to t4g.small (2 GiB) if memory gets tight."
+  description = "EC2 instance type. Must be arm64 (Graviton) to match the image. t4g.small (2 GiB) since M2; changing it stops and starts the instance in place."
   type        = string
-  default     = "t4g.micro"
+  default     = "t4g.small"
+}
+
+variable "availability_zone" {
+  description = "Zone for the subnet, instance and data volume. Fixed, so changing instance_type never tries to move the data volume; it must offer instance_type."
+  type        = string
+  default     = "us-east-1a"
 }
 
 variable "root_volume_gb" {
@@ -63,9 +69,9 @@ variable "monthly_budget_usd" {
 }
 
 variable "budget_early_warning_usd" {
-  description = "Actual spend, before credits, that triggers an early warning email."
+  description = "Actual spend, before credits, that triggers an early warning email. Set above the expected ~US$19 a month, so it only fires when spend is out of line."
   type        = number
-  default     = 15
+  default     = 22
 }
 
 variable "snapshot_retention_days" {

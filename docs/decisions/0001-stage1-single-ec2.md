@@ -21,3 +21,7 @@ SentinelStream has one user, a handful of background jobs and a small Postgres d
 - Single point of failure: an instance loss means reattaching the data volume or restoring a snapshot or backup. Acceptable for a personal tool.
 - Images must be built for linux/arm64.
 - Stage 2 (RDS, ECS Fargate, S3 + CloudFront) remains an optional move after M4; keeping one image and env-based config keeps that move small.
+
+## Update, 27 Nov 2026
+
+Moved to `t4g.small` (2 GiB, about US$19 a month all in) at the start of M2, ahead of market-wide daily bars and the base-rate calculator. Still one instance, still within the US$30 target. The availability zone is now a fixed Terraform variable rather than the first zone offering the instance type, so changing the type can never ask to move the data volume.
