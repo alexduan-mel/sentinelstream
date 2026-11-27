@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { InfoCircleOutlined } from "@ant-design/icons";
 import {
   Button,
   Input,
@@ -23,6 +24,7 @@ import {
   type Instrument,
   type OnboardingStatus
 } from "../api/instruments";
+import { Hint } from "../components/AlertCells";
 import { LoadError } from "../components/LoadError";
 import { PageTitle, SectionTitle } from "../components/PageTitle";
 import { EMPTY, Timestamp } from "../components/Timestamp";
@@ -43,13 +45,76 @@ const STATUS: Record<OnboardingStatus, { label: string; color: string }> = {
   failed: { label: "Failed", color: "error" }
 };
 
+/** What each status means for a tracked ticker, and what happens next. */
+export const STATUS_HELP: Record<OnboardingStatus, string> = {
+  pending:
+    "Added and waiting for the setup job, which usually starts within seconds. Next: Backfilling.",
+  backfilling:
+    "Identified on SEC and already checked for new filings every 5 minutes. Its history is loading: " +
+    "2 years of filings, daily prices and financial data, usually in under a minute. Next: Ready.",
+  ready:
+    "Fully set up. New filings are checked every 5 minutes, and prices update after each US market close.",
+  failed:
+    "Setup could not finish; the reason is shown below. Click Retry to try again, or Remove it."
+};
+
+/** A Backfilling ticker with an error stopped at a temporary problem; it does not move on by itself. */
+export const STUCK_HELP =
+  "Stopped at a temporary problem (shown below). It is retried at the next daily setup run, 19:00 ET, " +
+  "or click Retry now. It is still checked for new filings meanwhile.";
+
+/** Benchmarks are only priced, so their statuses mean less. */
+export const BENCHMARK_HELP: Record<OnboardingStatus, string> = {
+  pending: "Waiting for the setup job to load its prices. Next: Ready.",
+  backfilling: "Loading its prices. Next: Ready.",
+  ready: "Two years of daily prices loaded; updated after each US market close.",
+  failed: "Its prices could not be loaded; the reason is on the Tasks page."
+};
+
+export const COLUMN_HELP = {
+  cik:
+    "SEC's permanent ID for the company (Central Index Key). Its filings are fetched by this number, " +
+    "which never changes, even when a ticker is renamed or reused. Share classes such as GOOGL and " +
+    "GOOG share one.",
+  filerType:
+    "Domestic companies file 10-K, 10-Q, 8-K and Form 4; their 8-Ks with items 1.01, 2.02, 4.02 or " +
+    "5.02 are alerted. Foreign private issuers file 20-F and 6-K instead; 6-Ks are not alerted yet, " +
+    "as they carry no item numbers. Insider purchases on Form 4 are alerted for both.",
+  onboarding:
+    "Setting a ticker up after it is added: Pending → Backfilling → Ready, or Failed if something " +
+    "goes wrong. Hover a status for what it means and what happens next."
+};
+
+/** A column title with an ⓘ that explains it on hover. */
+function HelpTitle({ title, help }: { title: string; help: string }) {
+  return (
+    <span className="whitespace-nowrap">
+      {title}{" "}
+      <Tooltip title={help} mouseEnterDelay={0.05}>
+        <InfoCircleOutlined aria-label={`About ${title}`} className="cursor-help text-text-muted" />
+      </Tooltip>
+    </span>
+  );
+}
+
+function StatusTag({ status, help }: { status: OnboardingStatus; help: string }) {
+  return (
+    <Hint text={help}>
+      <Tag className="sentinel-tag" color={STATUS[status].color}>
+        {STATUS[status].label}
+      </Tag>
+    </Hint>
+  );
+}
+
 function OnboardingCell({ instrument }: { instrument: Instrument }) {
-  const status = STATUS[instrument.onboarding_status];
+  const stuck = instrument.onboarding_status === "backfilling" && instrument.onboarding_error;
   return (
     <Space orientation="vertical" size={2}>
-      <Tag className="sentinel-tag" color={status.color}>
-        {status.label}
-      </Tag>
+      <StatusTag
+        status={instrument.onboarding_status}
+        help={stuck ? STUCK_HELP : STATUS_HELP[instrument.onboarding_status]}
+      />
       {instrument.onboarding_error && (
         <Tooltip title={instrument.onboarding_error} mouseEnterDelay={0.05}>
           <Typography.Text
@@ -154,21 +219,21 @@ export function WatchlistPage() {
       render: (value: string | null) => value ?? <Muted>{EMPTY}</Muted>
     },
     {
-      title: "Filer type",
+      title: <HelpTitle title="Filer type" help={COLUMN_HELP.filerType} />,
       dataIndex: "filer_type",
-      width: 130,
+      width: 140,
       render: (value: Instrument["filer_type"]) =>
         value ? FILER_TYPE_LABEL[value] : <Muted>{EMPTY}</Muted>
     },
     {
-      title: "CIK",
+      title: <HelpTitle title="CIK" help={COLUMN_HELP.cik} />,
       dataIndex: "cik",
       width: 120,
       render: (value: string | null) =>
         value ? <span className="font-mono">{value}</span> : <Muted>{EMPTY}</Muted>
     },
     {
-      title: "Onboarding",
+      title: <HelpTitle title="Onboarding" help={COLUMN_HELP.onboarding} />,
       key: "onboarding",
       width: 280,
       render: (_, item) => <OnboardingCell instrument={item} />
@@ -235,9 +300,10 @@ export function WatchlistPage() {
         const history = priceHistoryLabel(item.prices);
         return (
           <Space size={8}>
-            <Tag className="sentinel-tag" color={STATUS[item.onboarding_status].color}>
-              {STATUS[item.onboarding_status].label}
-            </Tag>
+            <StatusTag
+              status={item.onboarding_status}
+              help={BENCHMARK_HELP[item.onboarding_status]}
+            />
             {history ? <span>{history}</span> : <Muted>No bars yet</Muted>}
           </Space>
         );

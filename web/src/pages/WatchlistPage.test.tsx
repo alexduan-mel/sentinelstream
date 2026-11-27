@@ -5,7 +5,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { priceHistoryLabel, type Instrument } from "../api/instruments";
 import { activeNavKey } from "../components/TopBar";
 import { installDomStubs } from "../test/dom";
-import { WatchlistPage } from "./WatchlistPage";
+import { COLUMN_HELP, STATUS_HELP, STUCK_HELP, WatchlistPage } from "./WatchlistPage";
 
 beforeAll(installDomStubs);
 afterEach(() => {
@@ -134,6 +134,27 @@ describe("WatchlistPage", () => {
     ).toBeTruthy();
     expect(within(benchmark).queryByRole("button", { name: "Remove" })).toBeNull();
     expect(screen.getByRole("heading", { name: "Watchlist · 3" })).toBeTruthy();
+  });
+
+  it("explains the columns and what each status means and leads to", async () => {
+    mockApi([[nbis, nvda, xyzq, qqq]]);
+    render(<WatchlistPage />);
+    await screen.findByText("NVIDIA CORP");
+
+    fireEvent.mouseEnter(screen.getByLabelText("About CIK"));
+    expect(await screen.findByText(COLUMN_HELP.cik)).toBeTruthy();
+    fireEvent.mouseEnter(screen.getByLabelText("About Onboarding"));
+    expect(await screen.findByText(COLUMN_HELP.onboarding)).toBeTruthy();
+    expect(COLUMN_HELP.onboarding).toContain("Pending → Backfilling → Ready");
+
+    const ready = screen.getByText("NVIDIA CORP").closest("tr") as HTMLElement;
+    fireEvent.mouseEnter(within(ready).getByText("Ready"));
+    expect(await screen.findByText(STATUS_HELP.ready)).toBeTruthy();
+
+    // Backfilling with an error is stuck until a retry, so it says so rather than "Next: Ready".
+    const stuck = screen.getByText("NBIS").closest("tr") as HTMLElement;
+    fireEvent.mouseEnter(within(stuck).getByText("Backfilling"));
+    expect(await screen.findByText(STUCK_HELP)).toBeTruthy();
   });
 
   it("adds a ticker, uppercased, and shows it pending", async () => {
