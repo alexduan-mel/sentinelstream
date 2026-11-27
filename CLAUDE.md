@@ -15,7 +15,7 @@ M2 gives every high alert a base rate: how stocks moved, compared with QQQ, afte
 - [ ] Insider-buying effect reproduced: a write-up in `docs/` with the result, whichever way it comes out
 - [ ] Market-wide 8-K item history
 - [ ] A base rate on each high alert, on the Alert detail page and in Slack, pooled across similar stocks when the sample is small
-- [ ] Split detection: a daily check of Massive's splits endpoint triggers a re-fetch (promised in ADR 0002)
+- [x] Split detection: a daily check of Massive's splits endpoint triggers a re-fetch (promised in ADR 0002); market-wide split data for research (ADR 0013)
 
 Next milestone after M2 is **M3: Explain** (see `docs/PRD.md`).
 
