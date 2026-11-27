@@ -5,8 +5,22 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { filingsQuery, itemLabel, pollLine, purchaseLabel, type Filing } from "../api/filings";
 import type { TaskDefinition } from "../api/tasks";
 import { activeNavKey } from "../components/TopBar";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+
 import { installDomStubs } from "../test/dom";
 import { AlertsPage } from "./AlertsPage";
+
+/** The page inside a router, with a stand-in detail route to show where a row click leads. */
+function renderPage() {
+  return render(
+    <MemoryRouter initialEntries={["/"]}>
+      <Routes>
+        <Route path="/" element={<AlertsPage />} />
+        <Route path="/alerts/:accessionNo" element={<div>detail page</div>} />
+      </Routes>
+    </MemoryRouter>
+  );
+}
 
 beforeAll(installDomStubs);
 afterEach(() => {
@@ -146,8 +160,9 @@ describe("filings helpers", () => {
     expect(pollLine(undefined, now)).toBeNull();
   });
 
-  it("highlights Alerts only on /", () => {
+  it("highlights Alerts on / and on alert detail pages", () => {
     expect(activeNavKey("/")).toBe("/");
+    expect(activeNavKey("/alerts/0001045810-26-000001")).toBe("/");
     expect(activeNavKey("/tasks")).toBe("/tasks");
     expect(activeNavKey("/tasksx")).toBe("");
   });
@@ -156,7 +171,7 @@ describe("filings helpers", () => {
 describe("AlertsPage", () => {
   it("lists filings with ticker, form, 8-K items and an SEC link", async () => {
     mockApi();
-    render(<AlertsPage />);
+    renderPage();
 
     const row = (await screen.findByText("NVDA")).closest("tr") as HTMLElement;
     expect(within(row).getByText("8-K")).toBeTruthy();
@@ -177,7 +192,7 @@ describe("AlertsPage", () => {
     const shared: Filing = { ...earnings, tickers: ["AMZN", "NVDA"] };
     const unknown: Filing = { ...form4, accession_no: "0000000001-26-000003", tickers: [] };
     mockApi({ items: [shared, unknown], total: 2 });
-    render(<AlertsPage />);
+    renderPage();
 
     expect(await screen.findByText("AMZN, NVDA")).toBeTruthy();
     const unknownRow = screen
@@ -188,7 +203,7 @@ describe("AlertsPage", () => {
 
   it("shows materiality with the rule's reason and when Slack got it", async () => {
     mockApi({ items: [form4, quarterly, earnings], total: 3 });
-    render(<AlertsPage />);
+    renderPage();
 
     await screen.findByText("NVDA");
     const headers = screen.getAllByRole("columnheader").map((cell) => cell.textContent);
@@ -228,7 +243,7 @@ describe("AlertsPage", () => {
       materiality_reason: null
     };
     mockApi({ items: [queued, unclassified], total: 2 });
-    render(<AlertsPage />);
+    renderPage();
 
     fireEvent.mouseEnter(await screen.findByText("Queued"));
     expect(
@@ -243,7 +258,7 @@ describe("AlertsPage", () => {
 
   it("filters by materiality and shows the poll line", async () => {
     const fetchMock = mockApi();
-    render(<AlertsPage />);
+    renderPage();
 
     expect(await screen.findByText(/^Polls every 5 min · /)).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "High" }));
@@ -256,7 +271,7 @@ describe("AlertsPage", () => {
 
   it("shows a one-line empty state", async () => {
     mockApi({ items: [], total: 0 });
-    render(<AlertsPage />);
+    renderPage();
 
     expect(await screen.findByText("No filings yet")).toBeTruthy();
   });
@@ -277,10 +292,21 @@ describe("AlertsPage", () => {
         return new Response(JSON.stringify({ items: [earnings], total: 1 }), { status: 200 });
       })
     );
-    render(<AlertsPage />);
+    renderPage();
 
     expect(await screen.findByText("database unavailable")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(screen.getByText("NVDA")).toBeTruthy());
+  });
+  it("opens a filing's detail page from its row, but not from its SEC link", async () => {
+    mockApi();
+    renderPage();
+
+    const link = await screen.findByRole("link", { name: /0001045810-26-000001/ });
+    fireEvent.click(link);
+    expect(screen.queryByText("detail page")).toBeNull();
+
+    fireEvent.click(screen.getByText("NVDA"));
+    expect(await screen.findByText("detail page")).toBeTruthy();
   });
 });

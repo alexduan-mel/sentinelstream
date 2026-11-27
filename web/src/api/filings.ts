@@ -106,3 +106,80 @@ export function pollLine(task: TaskDefinition | undefined, now: Date = new Date(
   }
   return parts.join(" · ");
 }
+
+export type FilingIssuer = {
+  ticker: string | null;
+  cik: string;
+  materiality: Materiality | null;
+  materiality_reason: string | null;
+  /** History: loaded when the issuer was first polled or onboarded, so never pushed. */
+  is_backfill: boolean;
+  first_seen_at: string;
+};
+
+export type Form4Transaction = {
+  line_no: number;
+  reporting_owners: string;
+  owner_roles: string;
+  security_title: string | null;
+  transaction_date: string | null;
+  transaction_code: string;
+  acquired_disposed: "A" | "D" | null;
+  shares: number | null;
+  price_per_share: number | null;
+  shares_owned_after: number | null;
+  direct_indirect: "D" | "I" | null;
+};
+
+export type FilingDetail = Filing & {
+  report_date: string | null;
+  primary_document: string | null;
+  primary_document_url: string | null;
+  first_seen_at: string;
+  /** Acceptance to first sighting by the poller; null for history. */
+  detection_delay_seconds: number | null;
+  slack_attempts: number | null;
+  /** Acceptance to Slack delivery. */
+  alert_latency_seconds: number | null;
+  issuers: FilingIssuer[];
+  form4_transactions: Form4Transaction[];
+};
+
+export function getFiling(accessionNo: string): Promise<FilingDetail> {
+  return apiFetch<FilingDetail>(`/api/filings/${encodeURIComponent(accessionNo)}`);
+}
+
+/** Form 4 transaction codes as SEC's Form 4 instructions define them. */
+export const FORM4_CODES: Record<string, string> = {
+  P: "Open-market or private purchase",
+  S: "Open-market or private sale",
+  A: "Grant or award",
+  D: "Disposition to the issuer",
+  F: "Shares withheld for exercise price or tax",
+  I: "Discretionary transaction",
+  M: "Exercise or conversion of a derivative",
+  C: "Conversion of a derivative",
+  E: "Expiration of a short derivative position",
+  H: "Expiration of a long derivative position",
+  O: "Exercise of an out-of-the-money derivative",
+  X: "Exercise of an in- or at-the-money derivative",
+  G: "Gift",
+  L: "Small acquisition",
+  W: "Acquired or disposed of by will or inheritance",
+  Z: "Deposit into or withdrawal from a voting trust",
+  J: "Other acquisition or disposition",
+  K: "Equity swap",
+  U: "Tendered in a change of control",
+  V: "Reported voluntarily earlier than required"
+};
+
+/** "P · Open-market or private purchase", or the bare code if SEC's list does not have it. */
+export function form4CodeLabel(code: string): string {
+  const meaning = FORM4_CODES[code];
+  return meaning ? `${code} · ${meaning}` : code;
+}
+
+/** "Form 4" for SEC's form type "4"; other forms as written. */
+export function formLabel(formType: string): string {
+  return formType === "4" ? "Form 4" : formType;
+}

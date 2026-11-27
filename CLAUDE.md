@@ -17,7 +17,7 @@ M1 is done when every box is ticked:
 - [x] Alerts page shows materiality, Slack delivery and when the poller last ran
 - [x] Failed runs emit the `task_run_failed` log line that the existing CloudWatch alarm watches
 - [x] Ticker onboarding job (pending → backfilling → ready) and the Watchlist page
-- [ ] Alert detail page
+- [x] Alert detail page
 - [ ] A real 8-K from a watchlist company reaches Slack within 10 minutes of EDGAR acceptance, checked from stored acceptance and delivery times
 
 Next milestone after M1 is **M2: Evidence harness** (see `docs/PRD.md`). Don't start M2 work until M1 is done.

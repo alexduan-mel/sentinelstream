@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   DatePicker,
   Segmented,
@@ -6,7 +7,6 @@ import {
   Space,
   Table,
   Tag,
-  Tooltip,
   Typography,
   type TableColumnsType
 } from "antd";
@@ -23,10 +23,10 @@ import {
   type FilingFacets,
   type FilingItem,
   type FilingPage,
-  type Materiality,
-  type SlackDelivery
+  type Materiality
 } from "../api/filings";
 import { listTasks, type TaskDefinition } from "../api/tasks";
+import { MaterialityTag, Pushed } from "../components/AlertCells";
 import { LoadError } from "../components/LoadError";
 import { PageTitle } from "../components/PageTitle";
 import { EMPTY, Timestamp } from "../components/Timestamp";
@@ -59,53 +59,6 @@ function Items({ filing }: { filing: Filing }) {
       ))}
     </>
   );
-}
-
-/** Explains a cell on hover, straight away (a native title waits about a second). */
-function Hint({ text, children }: { text: string; children: ReactNode }) {
-  return (
-    <Tooltip title={text} mouseEnterDelay={0.05}>
-      <span className="cursor-help">{children}</span>
-    </Tooltip>
-  );
-}
-
-/** DESIGN.md, Alerts: `High` amber, `Low` neutral. The rule's reason shows on hover. */
-function MaterialityTag({ filing }: { filing: Filing }) {
-  if (!filing.materiality) {
-    return (
-      <Hint text="Not classified yet">
-        <Muted>{EMPTY}</Muted>
-      </Hint>
-    );
-  }
-  const high = filing.materiality === "high";
-  const tag = (
-    <Tag className="sentinel-tag" color={high ? "warning" : "default"}>
-      {high ? "High" : "Low"}
-    </Tag>
-  );
-  return filing.materiality_reason ? <Hint text={filing.materiality_reason}>{tag}</Hint> : tag;
-}
-
-/** The Slack time once delivered; "Queued" while waiting; "Skipped" if it will never be sent. */
-function Pushed({ slack }: { slack: SlackDelivery | null }) {
-  if (slack?.status === "delivered") return <Timestamp value={slack.delivered_at} />;
-  if (slack?.status === "pending") {
-    return (
-      <Hint text={slack.detail ? `Last attempt: ${slack.detail}` : "Sent on the next poll"}>
-        <Muted>Queued</Muted>
-      </Hint>
-    );
-  }
-  if (slack?.status === "skipped") {
-    return (
-      <Hint text={`Not pushed: ${slack.detail ?? "no reason recorded"}`}>
-        <Muted>Skipped</Muted>
-      </Hint>
-    );
-  }
-  return <Muted>{EMPTY}</Muted>;
 }
 
 const columns: TableColumnsType<Filing> = [
@@ -166,6 +119,7 @@ const columns: TableColumnsType<Filing> = [
         target="_blank"
         rel="noopener noreferrer"
         aria-label={`Open ${filing.accession_no} on SEC EDGAR`}
+        onClick={(event) => event.stopPropagation()} // the row itself opens the detail page
       >
         SEC ↗
       </a>
@@ -175,6 +129,7 @@ const columns: TableColumnsType<Filing> = [
 
 /** Every stored SEC filing, newest first, with its materiality and Slack delivery. */
 export function AlertsPage() {
+  const navigate = useNavigate();
   const [filings, setFilings] = useState<Loadable<FilingPage>>({
     data: null,
     loading: true,
@@ -306,6 +261,10 @@ export function AlertsPage() {
       ) : (
         <Table<Filing>
           rowKey="accession_no"
+          onRow={(filing) => ({
+            className: "cursor-pointer",
+            onClick: () => navigate(`/alerts/${filing.accession_no}`)
+          })}
           size="small"
           tableLayout="fixed"
           columns={columns}

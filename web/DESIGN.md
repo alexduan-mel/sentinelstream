@@ -98,8 +98,12 @@ Data: `instruments` with their onboarding status (ADR 0010), newest filing and p
 
 ### Alert detail (`/alerts/:accession`, M1)
 
-- Header: ticker, form, items, accepted time, materiality, pushed time.
-- An Ant Design `Descriptions` block: accession number, CIK, filed date, primary document (link to SEC), first seen, detection delay (`first_seen_at - accepted_at`).
+Opened by clicking a row on Alerts (the "SEC ↗" link still opens EDGAR). The Alerts tab stays selected.
+
+- "← Alerts" back link, then the header: tickers and form ("AMZN · Form 4"), the materiality tag, each 8-K item with its title or the shares bought, and for a high filing "Flagged:" with the rule that matched.
+- An Ant Design `Descriptions` block: accepted by EDGAR, pushed to Slack (time, Queued or Skipped, with the reason on hover), first seen by the poller, detection delay (`first_seen_at - accepted_at`; "History" for filings loaded as history, where the gap says nothing about polling), acceptance to Slack (the M1 10-minute target), Slack attempts, accession number (mono, copyable), filer CIK, filing date, period of report, primary document and the filing index (links to SEC).
+- **Companies it is listed under**: one row per linked issuer with its own materiality, the rule's reason, whether it was news or history for that issuer, and when it was first seen.
+- **Form 4 transactions** (only when stored): reporting owner and role, security, date, code with SEC's meaning ("P · Open-market or private purchase"), shares (+ acquired, − disposed), price, shares owned after, direct or indirect.
 - Base rates (M2), key financials (M3) and "Log a decision" (M4) are added by those milestones, not shown as placeholders.
 
 ### Ticker deep dive (M3)
