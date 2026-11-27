@@ -29,6 +29,10 @@ class MassiveError(RuntimeError):
     pass
 
 
+class MassiveEntitlementError(MassiveError):
+    """The requested date is outside the history the plan includes."""
+
+
 def api_key_from_env() -> str:
     value = os.getenv("MASSIVE_API_KEY", "").strip()
     if not value:
@@ -120,6 +124,48 @@ class MassiveClient:
         results = payload.get("results") or []
         if not isinstance(results, list):
             raise MassiveError(f"Massive results for {symbol} are not a list")
+        payload["results"] = results
+        return payload
+
+    def grouped_daily(self, day: date) -> dict[str, Any]:
+        """As-traded (not split-adjusted) daily bars for every US stock on ``day``.
+
+        Returns the provider payload; ``results`` holds one aggregate per symbol (``T``), empty when
+        there was no session or Massive has not published it yet. A day before the plan's history
+        raises :class:`MassiveEntitlementError`.
+        """
+        what = f"grouped daily {day.isoformat()}"
+        path = f"/v2/aggs/grouped/locale/us/market/stocks/{day.isoformat()}"
+        try:
+            response = send_with_retries(
+                lambda: self._http.get(path, params={"adjusted": "false", "apiKey": self._api_key}),
+                pacer=self._pacer,
+                base_delay=self._base_delay,
+                describe=f"massive {what}",
+            )
+        except httpx.TransportError as exc:
+            raise MassiveError(f"Massive request for {what} failed: {self._redact(str(exc))}") from None
+
+        body = self._redact(response.text.strip())[:300]
+        if response.status_code == 403 and "historical entitlement" in body.lower():
+            raise MassiveEntitlementError(f"{what} is before the history the Massive plan includes")
+        if response.status_code >= 400:
+            hint = " Check MASSIVE_API_KEY and plan permissions." if response.status_code in (401, 403) else ""
+            raise MassiveError(f"Massive request for {what} failed: HTTP {response.status_code} {body}{hint}")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise MassiveError(f"Massive response for {what} is not JSON") from exc
+        if not isinstance(payload, dict):
+            raise MassiveError(f"Massive response for {what} has an unexpected shape")
+        status = str(payload.get("status") or "").upper()
+        if status not in ("OK", "DELAYED"):
+            raise MassiveError(f"Massive returned status {status or 'missing'} for {what}")
+        results = payload.get("results") or []
+        if not isinstance(results, list):
+            raise MassiveError(f"Massive results for {what} are not a list")
+        if payload.get("adjusted") is True:
+            raise MassiveError(f"Massive returned split-adjusted bars for {what}; as-traded bars were asked for")
         payload["results"] = results
         return payload
 
