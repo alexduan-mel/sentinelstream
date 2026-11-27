@@ -7,7 +7,8 @@ daily by ``compute_base_rates``). An alert reads them here; nothing is calculate
   item it carries (1.01, 2.02, 4.02, 5.02).
 * **Scope:** the company's industry (its two-digit SIC major group, from its SEC record) when that
   has at least ``MIN_INDUSTRY_EVENTS`` past events with a 20-session result under the main filters;
-  otherwise the whole market (pooled). The reason is in ``scope_label``.
+  otherwise the whole market (pooled). ``scope_label`` says which past filings the numbers are based
+  on; every figure is compared with QQQ either way.
 
 This is history, not a forecast: the text never says what to do.
 """
@@ -121,16 +122,15 @@ def base_rates_for(conn: Connection, *, form_type: str, items: list[str], cik: s
     for kind, key, label in alert_kinds(form_type, items):
         scopes = ["market"] + ([industry[0]] if industry else [])
         found = _rows(conn, kind, key, scopes)
-        scope, scope_label = "market", "All US-listed companies"
+        scope, scope_label = "market", "Based on past filings from all US-listed companies"
         if industry and industry[0] in found:
             reference = found[industry[0]].get("main", {}).get(str(REFERENCE_HORIZON))
             if reference and reference["n"] >= MIN_INDUSTRY_EVENTS:
                 scope = "industry"
-                scope_label = f"Same broad industry: SIC group {industry[0][5:]}" + (
-                    f", which includes {industry[1]}" if industry[1] else ""
-                )
+                group = f"SIC group {industry[0][5:]}" + (f", which includes {industry[1]}" if industry[1] else "")
+                scope_label = f"Based on past filings from companies in the same broad industry ({group})"
         if scope == "market" and industry:
-            scope_label += f" (fewer than {MIN_INDUSTRY_EVENTS} in its industry, so pooled)"
+            scope_label += f" (fewer than {MIN_INDUSTRY_EVENTS} in this company's industry, so pooled)"
         chosen = found.get(industry[0] if scope == "industry" else "market")
         if not chosen:
             continue

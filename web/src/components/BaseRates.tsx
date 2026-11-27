@@ -182,9 +182,9 @@ export function BaseRateSection({ rates }: { rates: BaseRate[] }) {
             </Space>
           ))}
           <Typography.Text type="secondary">
-            Returns after trading costs, compared with QQQ over the same trading days. This is what
-            followed past filings of this kind, not a forecast.{" "}
-            <Link to="/glossary#base-rate">What a base rate is</Link>
+            Returns after trading costs, minus what QQQ did over the same trading days, so the
+            market&apos;s own moves are taken out. This is what followed past filings of this kind,
+            not a forecast. <Link to="/glossary#base-rate">What a base rate is</Link>
           </Typography.Text>
         </Space>
       )}
