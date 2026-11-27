@@ -43,3 +43,9 @@ The prices step now first reads Massive's ticker details, which give the listing
 - Bars start at the later of two years back and the listing date, and stored bars dated before the listing are deleted.
 
 Migration 010 moves ready equities back to `backfilling` and makes onboarding due at once, so the next run cleans up the stored history. A second Massive request per ticker costs about 12 seconds at the free plan's 5 requests a minute.
+
+## Amendment, 27 Nov 2026: symbols are checked with SEC when added
+
+Adding four random letters used to create a row that turned `failed` a few seconds later, once the onboarding job had asked SEC. The watchlist should only ever hold real tickers. `POST /api/instruments` now checks the symbol with SEC first and refuses with 422, storing nothing, when SEC does not list it ("XYZQ: not found on any US exchange"), when it belongs to a fund, or when its filer type cannot be told. If SEC cannot be reached it answers 503, rather than storing an unchecked symbol. A valid ticker is stored with its CIK, name and filer type, so the page shows them at once.
+
+This is a quick read to validate input, not background work, so ground rule 4 still holds: the loading stays in `onboard_tickers`. The check costs one request for the issuer's submissions record. SEC's ticker map, about 1 MB and refreshed by SEC about daily, is cached in the API process for 6 hours, which is fine for deciding whether a symbol exists (the poller never uses this cache). Onboarding still confirms the identity and can still mark a ticker `failed`, for example when Massive ties the symbol to a different company.
