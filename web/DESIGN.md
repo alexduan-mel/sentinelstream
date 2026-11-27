@@ -85,7 +85,8 @@ Data: `filings` plus the M1 materiality and notification records.
 - One table, newest first: Accepted · Ticker · Form · Item (e.g. "Item 5.02 · Departure of directors or officers", "Open-market purchase · 12,400 sh") · Materiality (`High` amber, `Low` neutral) · Pushed (Slack time, or "—") · "SEC ↗" link to the filing.
 - One filter row: ticker multi-select, materiality Segmented (All / High / Low), form type select, date range. On the right of the same row, muted text: "Polls every 5 min · next in 3 min".
 - High means materiality rules v0 only: 8-K items 1.01, 2.02, 4.02 and 5.02, and Form 4 open-market purchases (code P). Everything else is Low.
-- Clicking a row opens Alert detail. No model-written summaries in M1.
+- Each row ends with a **Details** link (opens Alert detail) and "SEC ↗" (opens EDGAR); clicking anywhere else on the row opens Alert detail too, unless text is being selected. Alert detail is a full page, not a side panel: its Form 4 and base-rate tables need the width.
+- The filters live in the address (`/?ticker=NVDA&materiality=high&page=2`), and a filter change replaces it rather than adding a history step. So "← Alerts", the browser's Back button and bookmarks all return to the same filtered list, at the same scroll position. No model-written summaries in M1.
 
 ### Watchlist (`/watchlist`, M1)
 

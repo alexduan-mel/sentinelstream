@@ -5,19 +5,33 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { filingsQuery, itemLabel, pollLine, purchaseLabel, type Filing } from "../api/filings";
 import type { TaskDefinition } from "../api/tasks";
 import { activeNavKey } from "../components/TopBar";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import { installDomStubs } from "../test/dom";
 import { AlertsPage } from "./AlertsPage";
 
+/** Shows the current address, and the list view a detail page was opened from. */
+function Where() {
+  const location = useLocation();
+  const from = (location.state as { fromSearch?: string } | null)?.fromSearch;
+  return (
+    <div data-testid="where">
+      {location.pathname}
+      {location.search}
+      {from !== undefined ? ` from ${from || "(no filters)"}` : ""}
+    </div>
+  );
+}
+
 /** The page inside a router, with a stand-in detail route to show where a row click leads. */
-function renderPage() {
+function renderPage(entry = "/") {
   return render(
-    <MemoryRouter initialEntries={["/"]}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/" element={<AlertsPage />} />
         <Route path="/alerts/:accessionNo" element={<div>detail page</div>} />
       </Routes>
+      <Where />
     </MemoryRouter>
   );
 }
@@ -179,7 +193,7 @@ describe("AlertsPage", () => {
       within(row).getByText("Item 2.02 · Results of Operations and Financial Condition")
     ).toBeTruthy();
     expect(within(row).getByText("Item 9.01 · Financial Statements and Exhibits")).toBeTruthy();
-    const link = within(row).getByRole("link", { name: /0001045810-26-000001/ });
+    const link = within(row).getByRole("link", { name: /0001045810-26-000001 on SEC EDGAR/ });
     expect(link.getAttribute("href")).toBe(earnings.sec_url);
     expect(link.getAttribute("target")).toBe("_blank");
 
@@ -196,7 +210,7 @@ describe("AlertsPage", () => {
 
     expect(await screen.findByText("AMZN, NVDA")).toBeTruthy();
     const unknownRow = screen
-      .getByRole("link", { name: /0000000001-26-000003/ })
+      .getByRole("link", { name: /0000000001-26-000003 on SEC EDGAR/ })
       .closest("tr") as HTMLElement;
     expect(within(unknownRow).getByTitle(`CIK ${form4.cik}`)).toBeTruthy();
   });
@@ -209,7 +223,9 @@ describe("AlertsPage", () => {
     const headers = screen.getAllByRole("columnheader").map((cell) => cell.textContent);
     expect(headers).toEqual(["Accepted", "Ticker", "Form", "Item", "Materiality", "Pushed", ""]);
 
-    const purchase = screen.getByRole("link", { name: /0001018724-26-000002/ }).closest("tr")!;
+    const purchase = screen
+      .getByRole("link", { name: /0001018724-26-000002 on SEC EDGAR/ })
+      .closest("tr")!;
     expect(
       within(purchase as HTMLElement).getByText("Open-market purchase · 12,400 sh")
     ).toBeTruthy();
@@ -217,7 +233,9 @@ describe("AlertsPage", () => {
     expect(await screen.findByText(form4.materiality_reason!)).toBeTruthy();
     expect(within(purchase as HTMLElement).getByText("Nov 20 23:34 ET")).toBeTruthy();
 
-    const low = screen.getByRole("link", { name: /0001018724-26-000003/ }).closest("tr")!;
+    const low = screen
+      .getByRole("link", { name: /0001018724-26-000003 on SEC EDGAR/ })
+      .closest("tr")!;
     expect(within(low as HTMLElement).getByText("Low")).toBeTruthy();
 
     const skipped = screen.getByText("NVDA").closest("tr") as HTMLElement;
@@ -250,7 +268,7 @@ describe("AlertsPage", () => {
       await screen.findByText("Last attempt: Slack answered HTTP 503: unavailable")
     ).toBeTruthy();
     const unclassifiedRow = screen
-      .getByRole("link", { name: /0001018724-26-000009/ })
+      .getByRole("link", { name: /0001018724-26-000009 on SEC EDGAR/ })
       .closest("tr") as HTMLElement;
     fireEvent.mouseEnter(within(unclassifiedRow).getAllByText("—")[0]);
     expect(await screen.findByText("Not classified yet")).toBeTruthy();
@@ -298,11 +316,44 @@ describe("AlertsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(screen.getByText("NVDA")).toBeTruthy());
   });
+  it("opens a filing from its Details link, remembering the filtered list it came from", async () => {
+    mockApi();
+    renderPage("/?materiality=high&ticker=NVDA");
+
+    fireEvent.click(await screen.findByRole("link", { name: "Details of 0001045810-26-000001" }));
+    expect(await screen.findByText("detail page")).toBeTruthy();
+    expect(screen.getByTestId("where").textContent).toBe(
+      "/alerts/0001045810-26-000001 from ?materiality=high&ticker=NVDA"
+    );
+  });
+
+  it("reads its filters from the address and writes changes back to it, starting again at page 1", async () => {
+    const fetchMock = mockApi();
+    renderPage("/?materiality=high&ticker=NVDA&page=2");
+
+    await waitFor(() => {
+      const query = fetchMock.mock.calls
+        .map(([input]) => String(input))
+        .find((url) => url.startsWith("/api/filings?"));
+      expect(query).toContain("materiality=high");
+      expect(query).toContain("ticker=NVDA");
+      expect(query).toContain("offset=50"); // page 2
+    });
+    expect((screen.getByRole("radio", { name: "High" }) as HTMLInputElement).checked).toBe(true);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Low" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("where").textContent).toBe("/?ticker=NVDA&materiality=low")
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "All" }));
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/?ticker=NVDA"));
+  });
+
   it("opens a filing's detail page from its row, but not from its SEC link", async () => {
     mockApi();
     renderPage();
 
-    const link = await screen.findByRole("link", { name: /0001045810-26-000001/ });
+    const link = await screen.findByRole("link", { name: /0001045810-26-000001 on SEC EDGAR/ });
     fireEvent.click(link);
     expect(screen.queryByText("detail page")).toBeNull();
 
