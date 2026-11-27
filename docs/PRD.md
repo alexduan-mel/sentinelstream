@@ -95,7 +95,7 @@ Stage 1 runs the whole stack on one EC2 instance with Docker Compose. It is defi
 flowchart LR
     GH[GitHub Actions<br/>tests, gitleaks, build] -- push image --> ECR[ECR]
     GH -- deploy --> SSM[Systems Manager<br/>Run Command, Parameter Store]
-    subgraph EC2[EC2 t4g.micro, Docker Compose]
+    subgraph EC2[EC2 t4g.small, Docker Compose]
         API[API + web]
         SCH[Scheduler]
         WRK[Workers]
@@ -114,7 +114,7 @@ flowchart LR
 | Terraform | Every AWS resource as code | 1 |
 | GitHub Actions + IAM OIDC role | Test, build, push and deploy with no stored keys | 1 |
 | ECR | Container images, tagged by commit | 1 |
-| EC2 (t4g.micro) + Docker Compose | API, scheduler, workers, Postgres, web | 1 |
+| EC2 (t4g.small) + Docker Compose | API, scheduler, workers, Postgres, web | 1 |
 | Systems Manager | Deploy step; secrets in Parameter Store | 1 |
 | CloudWatch Logs + alarms | Container logs; alarm on failed runs | 1 |
 | S3 | Raw filing archive; nightly database backups | 1 |

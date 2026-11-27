@@ -32,7 +32,7 @@ flowchart LR
   gh -->|image tagged by commit SHA| ecr[(ECR)]
   gh -->|SSM Run Command: deploy.sh| ec2
 
-  subgraph ec2[EC2 t4g.micro · Docker Compose]
+  subgraph ec2[EC2 t4g.small · Docker Compose]
     api[api<br/>FastAPI + built React UI]
     sched[scheduler<br/>enqueues due runs]
     worker[worker<br/>claims and runs tasks]

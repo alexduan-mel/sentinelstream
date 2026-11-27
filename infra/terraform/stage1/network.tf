@@ -10,8 +10,10 @@ data "aws_ec2_instance_type_offerings" "available" {
   }
 }
 
+# The zone is fixed rather than derived from the offerings: the data volume cannot move zones, so
+# a zone that changed with instance_type would make Terraform try to replace it.
 locals {
-  availability_zone = sort(data.aws_ec2_instance_type_offerings.available.locations)[0]
+  availability_zone = var.availability_zone
 }
 
 resource "aws_vpc" "main" {
@@ -32,6 +34,13 @@ resource "aws_subnet" "public" {
   availability_zone       = local.availability_zone
   map_public_ip_on_launch = true
   tags                    = { Name = "${var.project}-public" }
+
+  lifecycle {
+    precondition {
+      condition     = contains(data.aws_ec2_instance_type_offerings.available.locations, var.availability_zone)
+      error_message = "The chosen availability_zone does not offer the chosen instance_type."
+    }
+  }
 }
 
 resource "aws_route_table" "public" {
