@@ -157,17 +157,21 @@ describe("WatchlistPage", () => {
     expect((screen.getByLabelText("Ticker to add") as HTMLInputElement).value).toBe("");
   });
 
-  it("shows why a ticker cannot be added next to the input", async () => {
-    mockApi([[nvda]], {
-      "POST /api/instruments": { status: 409, body: { detail: "NVDA is already on the watchlist" } }
+  it.each([
+    ["nvda", 409, "NVDA is already on the watchlist"],
+    ["xyzq", 422, "XYZQ: not found on any US exchange"]
+  ])("shows why %s cannot be added next to the input", async (typed, status, detail) => {
+    const fetchMock = mockApi([[nvda]], {
+      "POST /api/instruments": { status, body: { detail } }
     });
     render(<WatchlistPage />);
     await screen.findByText("NVIDIA CORP");
 
-    fireEvent.change(screen.getByLabelText("Ticker to add"), { target: { value: "nvda" } });
+    fireEvent.change(screen.getByLabelText("Ticker to add"), { target: { value: typed } });
     fireEvent.click(screen.getByRole("button", { name: "Add ticker" }));
 
-    expect(await screen.findByText("NVDA is already on the watchlist")).toBeTruthy();
+    expect(await screen.findByText(detail)).toBeTruthy();
+    expect(calls(fetchMock, "GET")).toHaveLength(1); // the list is not reloaded: nothing was added
   });
 
   it("retries a failed ticker and removes one after confirming", async () => {

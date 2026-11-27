@@ -1,8 +1,33 @@
-"""The watchlist API: list, add, remove and retry. Adding only queues work (ground rule 4)."""
+"""The watchlist API: list, add, remove and retry. Adding checks the symbol with SEC (a fake here),
+stores only real tickers, and queues the loading for the worker (ground rule 4)."""
 
 from __future__ import annotations
 
+import httpx
 import pytest
+
+from api import instruments
+from tests.test_sec_ingestion import TICKER_MAP, FakeSec, _filing, _submissions
+
+MSFT_CIK = "0000789019"
+
+
+@pytest.fixture(autouse=True)
+def fake_sec(monkeypatch) -> FakeSec:
+    """SEC as the add endpoint sees it: the shared fake, plus MSFT."""
+    fake = FakeSec()
+    fake.routes["/files/company_tickers_exchange.json"] = {
+        "fields": TICKER_MAP["fields"],
+        "data": [*TICKER_MAP["data"], [789019, "MICROSOFT CORP", "MSFT", "Nasdaq"]],
+    }
+    fake.routes[f"/submissions/CIK{MSFT_CIK}.json"] = _submissions(
+        "MICROSOFT CORP", ["MSFT"], [_filing("0000950170-26-000001", "10-Q", "2026-10-29T20:05:00.000Z",
+                                             filed="2026-10-29")]
+    )  # fmt: skip
+    monkeypatch.setattr(instruments, "sec_client", fake.client)
+    instruments.TICKER_MAP.clear()
+    yield fake
+    instruments.TICKER_MAP.clear()
 
 
 def _queued(connect_app_db) -> list[tuple]:
@@ -72,13 +97,15 @@ def test_list_shows_the_watchlist_then_benchmarks_with_their_coverage(signed_in_
     assert qqq["prices"] == {"first": "2024-11-25", "last": "2026-11-25", "bars": 2}
 
 
-def test_adding_a_ticker_stores_it_pending_and_queues_onboarding(signed_in_client, connect_app_db) -> None:
+def test_adding_a_ticker_stores_it_with_its_identity_and_queues_onboarding(signed_in_client, connect_app_db) -> None:
     response = signed_in_client.post("/api/instruments", json={"symbol": " msft "})
 
     assert response.status_code == 202
     body = response.json()
     assert (body["symbol"], body["onboarding_status"]) == ("MSFT", "pending")
     assert _row(connect_app_db, "MSFT") == (True, "pending", "watchlist")
+    msft = next(item for item in signed_in_client.get("/api/instruments").json() if item["symbol"] == "MSFT")
+    assert (msft["name"], msft["cik"], msft["filer_type"]) == ("MICROSOFT CORP", MSFT_CIK, "domestic")
     assert _queued(connect_app_db) == [("onboard_tickers", "pending", ["MSFT"], False, "web:admin")]
 
     again = signed_in_client.post("/api/instruments", json={"symbol": "MSFT"})
@@ -89,6 +116,51 @@ def test_adding_a_ticker_stores_it_pending_and_queues_onboarding(signed_in_clien
 @pytest.mark.parametrize("symbol", ["", "1ABC", "TOO-LONG-SYMB", "AB CD", "NVDA;"])
 def test_bad_symbols_are_rejected(signed_in_client, symbol: str) -> None:
     assert signed_in_client.post("/api/instruments", json={"symbol": symbol}).status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("symbol", "detail"),
+    [
+        ("XYZQ", "XYZQ: not found on any US exchange"),
+        ("ANT", "ANT: CIK 0009999999 for ANT files as a fund (485BPOS), not a company"),  # the fake's fund
+    ],
+)
+def test_a_symbol_that_is_not_a_listed_company_is_refused_and_not_stored(
+    signed_in_client, connect_app_db, symbol: str, detail: str
+) -> None:
+    conn = connect_app_db()
+    with conn.cursor() as cursor:
+        cursor.execute("DELETE FROM instruments WHERE symbol = 'ANT'")  # so the fund check is reached
+    conn.commit()
+
+    response = signed_in_client.post("/api/instruments", json={"symbol": symbol})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == detail
+    assert _row(connect_app_db, symbol) is None
+    assert _queued(connect_app_db) == []
+
+
+def test_nothing_is_added_while_sec_cannot_be_reached(signed_in_client, connect_app_db, fake_sec) -> None:
+    fake_sec.routes["/files/company_tickers_exchange.json"] = httpx.Response(503)
+
+    response = signed_in_client.post("/api/instruments", json={"symbol": "MSFT"})
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Could not reach SEC to check MSFT. Try again in a minute."
+    assert _row(connect_app_db, "MSFT") is None
+
+
+def test_the_ticker_map_is_fetched_once_and_reused(signed_in_client, fake_sec) -> None:
+    assert signed_in_client.post("/api/instruments", json={"symbol": "MSFT"}).status_code == 202
+    assert signed_in_client.post("/api/instruments", json={"symbol": "XYZQ"}).status_code == 422
+    assert fake_sec.paths().count("/files/company_tickers_exchange.json") == 1
+
+
+def test_duplicates_and_benchmarks_are_refused_before_asking_sec(signed_in_client, fake_sec) -> None:
+    assert signed_in_client.post("/api/instruments", json={"symbol": "NVDA"}).status_code == 409
+    assert signed_in_client.post("/api/instruments", json={"symbol": "SPY"}).status_code == 409
+    assert fake_sec.requests == []
 
 
 def test_benchmarks_cannot_be_added_or_removed(signed_in_client) -> None:
@@ -107,7 +179,7 @@ def test_removing_keeps_history_and_adding_back_refreshes_identity(signed_in_cli
     back = signed_in_client.post("/api/instruments", json={"symbol": "NVDA"})
     assert back.status_code == 202
     assert _row(connect_app_db, "NVDA") == (True, "pending", "watchlist")
-    assert _queued(connect_app_db)[-1][2:4] == (["NVDA"], True)
+    assert _queued(connect_app_db)[-1][2:4] == (["NVDA"], False)  # identity checked on the way back in
 
 
 def test_retrying_a_failed_ticker_queues_a_fresh_lookup(signed_in_client, connect_app_db) -> None:

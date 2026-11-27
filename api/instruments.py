@@ -1,15 +1,20 @@
 """The watchlist and benchmarks: list instruments, add and remove tickers, retry onboarding.
 
-Adding a ticker stores it as ``pending`` and queues an ``onboard_tickers`` run, returning 202; the
-work itself happens in the worker (ground rule 4). Removing one sets ``active = false`` and keeps
-its history. Benchmarks are fixed and cannot be added or removed here.
+Adding a ticker first checks it with SEC, so a symbol that is not a US-listed operating company is
+refused with a clear message and never stored. That check is a quick read (SEC's ticker map, cached
+here for a few hours, plus the issuer's submissions record), not background work. A valid ticker is
+stored as ``pending`` with its identity and an ``onboard_tickers`` run is queued, returning 202; the
+loading happens in the worker (ground rule 4). Removing one sets ``active = false`` and keeps its
+history. Benchmarks are fixed and cannot be added or removed here.
 """
 
 from __future__ import annotations
 
 import re
+import threading
+import time
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
@@ -17,6 +22,8 @@ from pydantic import BaseModel, Field
 from api.auth import CurrentUser
 from api.db import DbConn
 from ingestion.onboarding import TASK_ID as ONBOARD_TASK
+from ingestion.sec_client import SecClient, SecConfigurationError, SecError
+from ingestion.sec_identity import IdentityError, Issuer, resolve_issuer
 from orchestration.task_runs import enqueue_run
 
 router = APIRouter(prefix="/api", tags=["instruments"])
@@ -59,6 +66,64 @@ class Queued(BaseModel):
     symbol: str
     onboarding_status: OnboardingStatus
     run_id: int
+
+
+TICKER_MAP_TTL_SECONDS = 6 * 3600
+
+
+class _TickerMapCache:
+    """SEC's ticker map, fetched at most once per ``TICKER_MAP_TTL_SECONDS`` by this process.
+
+    SEC refreshes the file about daily, and it only decides whether a symbol exists: the issuer's own
+    submissions record, fetched fresh for every add, confirms the rest.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._rows: list[dict[str, Any]] | None = None
+        self._fetched = 0.0
+
+    def get(self, sec: SecClient) -> list[dict[str, Any]]:
+        with self._lock:
+            if self._rows is None or time.monotonic() - self._fetched > TICKER_MAP_TTL_SECONDS:
+                self._rows = sec.ticker_map()
+                self._fetched = time.monotonic()
+            return self._rows
+
+    def clear(self) -> None:
+        with self._lock:
+            self._rows = None
+
+
+TICKER_MAP = _TickerMapCache()
+
+
+def sec_client() -> SecClient:
+    return SecClient.from_env()
+
+
+def check_with_sec(symbol: str) -> Issuer:
+    """The SEC issuer behind ``symbol``, or an HTTP error saying why it cannot be added."""
+    try:
+        with sec_client() as sec:
+            ticker_map = TICKER_MAP.get(sec)
+            if not any(str(row.get("ticker", "")).upper() == symbol for row in ticker_map):
+                raise HTTPException(status_code=422, detail=f"{symbol}: not found on any US exchange")
+            issuer, _submissions = resolve_issuer(symbol, ticker_map, sec)
+    except SecConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except IdentityError as exc:
+        raise HTTPException(status_code=422, detail=f"{symbol}: {exc}") from None
+    except SecError:
+        raise HTTPException(
+            status_code=503, detail=f"Could not reach SEC to check {symbol}. Try again in a minute."
+        ) from None
+    if issuer.filer_type is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{symbol}: SEC filings do not show whether it is a domestic filer or a foreign private issuer",
+        )
+    return issuer
 
 
 def _symbol(raw: str) -> str:
@@ -124,32 +189,49 @@ def _queue_onboarding(conn, user, symbol: str, *, force_refresh: bool) -> int:
 
 @router.post("/instruments", status_code=202, response_model=Queued)
 def add_instrument(body: AddInstrument, conn: DbConn, user: CurrentUser) -> Queued:
-    """Add a watchlist ticker and queue its onboarding. A removed ticker comes back with its history."""
+    """Check a ticker with SEC, then add it to the watchlist and queue its onboarding.
+
+    A symbol SEC does not list, or one that belongs to a fund, is refused (422) and nothing is stored.
+    A removed ticker comes back with its history.
+    """
     symbol = _symbol(body.symbol)
     with conn.cursor() as cursor:
-        cursor.execute("SELECT role, active FROM instruments WHERE symbol = %s FOR UPDATE", (symbol,))
+        cursor.execute("SELECT role, active FROM instruments WHERE symbol = %s", (symbol,))
         existing = cursor.fetchone()
-        if existing is not None and existing[0] == "benchmark":
-            conn.rollback()
-            raise HTTPException(status_code=409, detail=f"{symbol} is a benchmark")
-        if existing is not None and existing[1]:
-            conn.rollback()
-            raise HTTPException(status_code=409, detail=f"{symbol} is already on the watchlist")
-        if existing is None:
-            cursor.execute(
-                "INSERT INTO instruments (symbol, asset_type, role) VALUES (%s, 'equity', 'watchlist')", (symbol,)
-            )
-        else:
-            # Back from removal: onboarding confirms the identity again and tops up the history.
-            cursor.execute(
-                """
-                UPDATE instruments
-                SET active = TRUE, onboarding_status = 'pending', onboarding_error = NULL, updated_at = NOW()
-                WHERE symbol = %s
-                """,
-                (symbol,),
-            )
-    run_id = _queue_onboarding(conn, user, symbol, force_refresh=existing is not None)
+    conn.rollback()
+    if existing is not None and existing[0] == "benchmark":
+        raise HTTPException(status_code=409, detail=f"{symbol} is a benchmark")
+    if existing is not None and existing[1]:
+        raise HTTPException(status_code=409, detail=f"{symbol} is already on the watchlist")
+
+    issuer = check_with_sec(symbol)  # outside any transaction: no row is locked while SEC answers
+    identity = {
+        "symbol": symbol,
+        "cik": issuer.cik,
+        "name": issuer.name or None,
+        "exchange": issuer.exchange,
+        "filer_type": issuer.filer_type,
+    }
+    with conn.cursor() as cursor:
+        # ON CONFLICT and the NOT active guard cover a second add while SEC was answering.
+        cursor.execute(
+            """
+            INSERT INTO instruments (symbol, asset_type, role, cik, name, exchange, filer_type)
+            VALUES (%(symbol)s, 'equity', 'watchlist', %(cik)s, %(name)s, %(exchange)s, %(filer_type)s)
+            ON CONFLICT (symbol) DO UPDATE
+            -- Back from removal: identity as SEC gives it today; onboarding tops up the history.
+            SET active = TRUE, cik = EXCLUDED.cik, name = EXCLUDED.name, exchange = EXCLUDED.exchange,
+                filer_type = EXCLUDED.filer_type, onboarding_status = 'pending', onboarding_error = NULL,
+                updated_at = NOW()
+            WHERE NOT instruments.active AND instruments.role = 'watchlist'
+            """,
+            identity,
+        )
+        stored = cursor.rowcount == 1
+    if not stored:
+        conn.rollback()
+        raise HTTPException(status_code=409, detail=f"{symbol} is already on the watchlist")
+    run_id = _queue_onboarding(conn, user, symbol, force_refresh=False)
     return Queued(symbol=symbol, onboarding_status="pending", run_id=run_id)
 
 
