@@ -12,11 +12,11 @@ export const NAV_ITEMS = [
   { key: "/tasks", label: "Tasks" }
 ];
 
-/** The nav tab for a path: "/" only on an exact match, other tabs also for their sub-paths. */
+/** The nav tab for a path: Alerts for "/" and alert detail pages, other tabs also for their sub-paths. */
 export function activeNavKey(pathname: string): string {
   const match = NAV_ITEMS.find((item) =>
     item.key === "/"
-      ? pathname === "/"
+      ? pathname === "/" || pathname.startsWith("/alerts/")
       : pathname === item.key || pathname.startsWith(`${item.key}/`)
   );
   return match?.key ?? "";
