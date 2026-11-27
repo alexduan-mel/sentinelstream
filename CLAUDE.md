@@ -20,7 +20,7 @@ M1 is done when every box is ticked:
 - [x] Alert detail page
 - [ ] A real 8-K from a watchlist company reaches Slack within 10 minutes of EDGAR acceptance, checked from stored acceptance and delivery times
 
-Next milestone after M1 is **M2: Evidence harness** (see `docs/PRD.md`). Don't start M2 work until M1 is done.
+Next milestone after M1 is **M2: Evidence harness** (see `docs/PRD.md`). M2 work may start now: everything in M1 is built, and its last box only waits for a watchlist company to file a qualifying 8-K (owner's decision, 27 Nov 2026). Tick that box when it happens.
 
 ## Architecture (stage 1)
 
