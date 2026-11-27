@@ -106,6 +106,7 @@ def _accessions(page: dict) -> list[str]:
 def test_filings_need_a_session(api_client) -> None:
     assert api_client.get("/api/filings").status_code == 401
     assert api_client.get("/api/filings/facets").status_code == 401
+    assert api_client.get("/api/filings/0001045810-26-000001").status_code == 401
 
 
 def test_filings_are_listed_newest_first_with_ticker_items_and_link(signed_in_client, connect_app_db) -> None:
@@ -230,3 +231,86 @@ def test_facets_list_resolved_watchlist_tickers_and_stored_forms(signed_in_clien
         "tickers": ["AMZN", "NVDA"],
         "form_types": ["10-Q", "4", "8-K"],
     }
+
+
+# --- one filing ------------------------------------------------------------------------------------
+
+
+def _seen(connect_app_db, accession: str, first_seen: str) -> None:
+    conn = connect_app_db()
+    with conn.cursor() as cursor:
+        cursor.execute("UPDATE filings SET first_seen_at = %s WHERE accession_no = %s", (first_seen, accession))
+        cursor.execute("UPDATE filing_issuers SET first_seen_at = %s WHERE accession_no = %s", (first_seen, accession))
+    conn.commit()
+
+
+def test_a_pushed_form4_shows_its_delays_issuers_and_transactions(signed_in_client, connect_app_db) -> None:
+    _seed(connect_app_db)
+    _seen(connect_app_db, "0001018724-26-000002", "2026-11-21 04:33:00+00")  # accepted 04:30:00
+
+    response = signed_in_client.get("/api/filings/0001018724-26-000002")
+
+    assert response.status_code == 200
+    detail = response.json()
+    assert (detail["materiality"], detail["purchase_shares"], detail["tickers"]) == ("high", 1400.5, ["AMZN"])
+    assert detail["detection_delay_seconds"] == 180.0
+    assert detail["alert_latency_seconds"] == 250.0  # delivered 04:34:10
+    assert detail["slack"]["status"] == "delivered" and detail["slack_attempts"] == 1
+    assert detail["issuers"] == [
+        {
+            "ticker": "AMZN",
+            "cik": AMZN_CIK,
+            "materiality": "high",
+            "materiality_reason": PURCHASE_REASON,
+            "is_backfill": False,
+            "first_seen_at": "2026-11-21T04:33:00Z",
+        }
+    ]
+    lines = detail["form4_transactions"]
+    assert [(t["line_no"], t["transaction_code"], t["acquired_disposed"], t["shares"]) for t in lines] == [
+        (1, "P", "A", 1000.0),
+        (2, "P", "A", 400.5),
+        (3, "S", "D", 9999.0),
+    ]
+    assert lines[0]["reporting_owners"] == "Jassy Andrew R" and lines[0]["owner_roles"] == "Director"
+
+
+def test_a_shared_8k_lists_each_issuer_and_why_it_was_not_pushed(signed_in_client, connect_app_db) -> None:
+    _seed(connect_app_db)
+    conn = connect_app_db()
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "UPDATE filings SET primary_document = 'nvda-8k.htm', report_date = '2026-11-20' "
+            "WHERE accession_no = '0001045810-26-000001'"
+        )
+    conn.commit()
+
+    detail = signed_in_client.get("/api/filings/0001045810-26-000001").json()
+
+    assert [(i["ticker"], i["materiality"]) for i in detail["issuers"]] == [("AMZN", "low"), ("NVDA", "high")]
+    assert detail["primary_document_url"] == (
+        "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000001/nvda-8k.htm"
+    )
+    assert detail["report_date"] == "2026-11-20"
+    assert detail["slack"]["status"] == "skipped"
+    assert detail["alert_latency_seconds"] is None
+    assert detail["form4_transactions"] == []
+
+
+def test_history_has_no_detection_delay(signed_in_client, connect_app_db) -> None:
+    _seed(connect_app_db)
+    conn = connect_app_db()
+    with conn.cursor() as cursor:
+        cursor.execute("UPDATE filing_issuers SET is_backfill = TRUE WHERE accession_no = '0001018724-26-000003'")
+    conn.commit()
+
+    detail = signed_in_client.get("/api/filings/0001018724-26-000003").json()
+
+    assert detail["detection_delay_seconds"] is None
+    assert detail["issuers"][0]["is_backfill"] is True
+
+
+def test_an_unknown_or_malformed_accession_is_refused(signed_in_client) -> None:
+    assert signed_in_client.get("/api/filings/0001045810-26-999999").status_code == 404
+    assert signed_in_client.get("/api/filings/not-an-accession").status_code == 422
+    assert signed_in_client.get("/api/filings/facets").status_code == 200  # still the facets route
