@@ -49,9 +49,17 @@ def test_list_tasks_shows_seeded_definitions(signed_in_client) -> None:
         task["task_id"]: (task["schedule_label"], task["trigger_mode"])
         for task in tasks
         if task["task_id"]
-        in ("ingest_insider_datasets", "ingest_market_8k", "ingest_market_bars", "ingest_splits", "onboard_tickers")
+        in (
+            "compute_base_rates",
+            "ingest_insider_datasets",
+            "ingest_market_8k",
+            "ingest_market_bars",
+            "ingest_splits",
+            "onboard_tickers",
+        )
     }
     assert due_now == {
+        "compute_base_rates": ("Daily 06:00 ET", "automatic"),
         "ingest_insider_datasets": ("Every 1 h", "automatic"),
         "ingest_market_8k": ("Every 10 min", "automatic"),
         "ingest_market_bars": ("Every 10 min", "automatic"),
@@ -61,15 +69,6 @@ def test_list_tasks_shows_seeded_definitions(signed_in_client) -> None:
     assert all(task["next_run_at"] is not None for task in tasks if task["task_id"] in due_now)
     tasks = [task for task in tasks if task["task_id"] not in due_now]
     assert tasks == [
-        {
-            "task_id": "compute_base_rates",
-            "label": "Compute base rates",
-            "schedule_label": "On demand",  # manual: its schedule columns are placeholders
-            "trigger_mode": "manual",
-            "enabled": True,
-            "next_run_at": None,
-            "last_run": None,
-        },
         {
             "task_id": "ingest_prices",
             "label": "Ingest daily price bars",
@@ -89,6 +88,20 @@ def test_list_tasks_shows_seeded_definitions(signed_in_client) -> None:
             "last_run": None,
         },
     ]
+
+
+def test_a_manual_task_is_labelled_on_demand(signed_in_client, connect_app_db) -> None:
+    conn = connect_app_db()
+    with conn.cursor() as cursor:
+        cursor.execute("UPDATE task_definitions SET trigger_mode = 'manual' WHERE task_id = 'compute_base_rates'")
+    conn.commit()
+
+    by_id = {task["task_id"]: task for task in signed_in_client.get("/api/tasks").json()}
+
+    assert (by_id["compute_base_rates"]["schedule_label"], by_id["compute_base_rates"]["next_run_at"]) == (
+        "On demand",
+        None,
+    )
 
 
 def test_next_run_is_shown_only_for_enabled_automatic_tasks(signed_in_client, connect_app_db) -> None:
