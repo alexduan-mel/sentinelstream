@@ -14,6 +14,7 @@ import {
   type Form4Transaction
 } from "../api/filings";
 import { Hint, MaterialityTag, Pushed } from "../components/AlertCells";
+import { BaseRateSection } from "../components/BaseRates";
 import { LoadError } from "../components/LoadError";
 import { SectionTitle } from "../components/PageTitle";
 import { EMPTY, Timestamp } from "../components/Timestamp";
@@ -298,6 +299,8 @@ export function AlertDetailPage() {
           }
         ]}
       />
+
+      {filing.materiality === "high" && <BaseRateSection rates={filing.base_rates ?? []} />}
 
       <SectionTitle>Companies it is listed under</SectionTitle>
       <Table<FilingIssuer>

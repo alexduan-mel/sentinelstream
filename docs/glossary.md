@@ -173,7 +173,10 @@ The share of past events where the stock did better than the benchmark over the 
 The range the true typical result probably lies in, given how many events there were and how much they varied. A wide range means the evidence is weak.
 
 ### Pooling
-Combining similar events from other companies when a company has too few of its own, so a base rate rests on a reasonable sample.
+Combining similar events from other companies when a company has too few of its own, so a base rate rests on a reasonable sample. SentinelStream uses the company's broad industry when it has at least 30 past events of the kind, and otherwise all US-listed companies, and says which.
+
+### Industry (SIC group)
+SEC files every company under a four-digit Standard Industrial Classification code, such as 3674 for semiconductors. The first two digits form a broad group, here 36 for electronic equipment, which is what base rates use to compare a company with its peers.
 
 ## The app
 

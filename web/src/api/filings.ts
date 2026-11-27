@@ -131,6 +131,39 @@ export type Form4Transaction = {
   direct_indirect: "D" | "I" | null;
 };
 
+/** What similar past events were followed by, at one horizon. Returns are fractions (0.012 = 1.2%). */
+export type BaseRateStats = {
+  n: number;
+  /** Average return after trading costs, minus QQQ's over the same days. */
+  mean: number;
+  median: number;
+  /** Share of past events that beat QQQ after costs. */
+  hit_rate: number;
+  /** 95% range for the average; null with fewer than six months of events. */
+  ci_low: number | null;
+  ci_high: number | null;
+  months: number;
+  mean_gross_return: number;
+  mean_benchmark_return: number;
+  mean_cost: number;
+  /** Average after costs, minus SPY's. */
+  mean_excess_vs_reference: number | null;
+  ended_early: number;
+};
+
+export type BaseRateVariant = "main" | "none";
+export const BASE_RATE_HORIZONS = ["1", "5", "20", "60"] as const;
+
+export type BaseRate = {
+  event_kind: "insider_purchase" | "8k_item";
+  event_key: string;
+  label: string;
+  scope: "industry" | "market";
+  scope_label: string;
+  as_of: string;
+  variants: Record<BaseRateVariant, Record<string, BaseRateStats | null>>;
+};
+
 export type FilingDetail = Filing & {
   report_date: string | null;
   primary_document: string | null;
@@ -143,6 +176,8 @@ export type FilingDetail = Filing & {
   alert_latency_seconds: number | null;
   issuers: FilingIssuer[];
   form4_transactions: Form4Transaction[];
+  /** One per high event, for the subject company; empty for a low filing or before one is calculated. */
+  base_rates: BaseRate[];
 };
 
 export function getFiling(accessionNo: string): Promise<FilingDetail> {

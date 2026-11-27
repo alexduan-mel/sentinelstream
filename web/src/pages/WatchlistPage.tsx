@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { InfoCircleOutlined } from "@ant-design/icons";
 import {
   Button,
   Input,
@@ -25,6 +24,7 @@ import {
   type OnboardingStatus
 } from "../api/instruments";
 import { Hint } from "../components/AlertCells";
+import { HelpTitle } from "../components/HelpTitle";
 import { LoadError } from "../components/LoadError";
 import { PageTitle, SectionTitle } from "../components/PageTitle";
 import { EMPTY, Timestamp } from "../components/Timestamp";
@@ -84,18 +84,6 @@ export const COLUMN_HELP = {
     "Setting a ticker up after it is added: Pending → Backfilling → Ready, or Failed if something " +
     "goes wrong. Hover a status for what it means and what happens next."
 };
-
-/** A column title with an ⓘ that explains it on hover. */
-function HelpTitle({ title, help }: { title: string; help: string }) {
-  return (
-    <span className="whitespace-nowrap">
-      {title}{" "}
-      <Tooltip title={help} mouseEnterDelay={0.05}>
-        <InfoCircleOutlined aria-label={`About ${title}`} className="cursor-help text-text-muted" />
-      </Tooltip>
-    </span>
-  );
-}
 
 function StatusTag({ status, help }: { status: OnboardingStatus; help: string }) {
   return (
