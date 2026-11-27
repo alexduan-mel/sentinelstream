@@ -2,10 +2,14 @@
 
 SentinelStream is a personal research assistant for a long-horizon US stock investor. It watches SEC EDGAR for new filings from the companies on a watchlist and flags the material ones. It explains each filing from the filing itself, with numbers taken from XBRL rather than from a model. It shows what has historically followed similar events, and it keeps a decision ledger measured against QQQ. It is a single-user tool that runs as a small, monitored production system on AWS: every merge to `main` is tested, built and deployed automatically, the infrastructure is defined in Terraform, and no credentials are stored in the repo or in CI. It makes no trades and gives no buy or sell recommendations. The full spec is in [`docs/PRD.md`](docs/PRD.md).
 
-![Alerts page: SEC filings for the watchlist, newest first, with 8-K items and their titles](docs/screenshots/alerts.png)
+![Alerts page: watchlist filings, newest first, with 8-K items, materiality, Slack delivery and when the poller last ran](docs/screenshots/alerts.png)
 
 <details>
-<summary>More screenshots: Tasks, a run expanded, and Sign in</summary>
+<summary>More screenshots: an alert's detail, Watchlist, Tasks, a run expanded, and Sign in</summary>
+
+![Alert detail: timings from EDGAR acceptance to Slack, the companies the filing is listed under, and its Form 4 transactions](docs/screenshots/alert-detail.png)
+
+![Watchlist: tracked tickers with filer type, CIK, onboarding status and last filing, then the benchmarks](docs/screenshots/watchlist.png)
 
 ![Tasks page: task definitions and run history](docs/screenshots/tasks.png)
 
@@ -15,7 +19,7 @@ SentinelStream is a personal research assistant for a long-horizon US stock inve
 
 </details>
 
-Screenshots are from the live EC2 deployment at 1440 px.
+Screenshots are from the live EC2 deployment at 1440 px, with times in ET (the page can also show the viewer's own time zone).
 
 ## Architecture
 
@@ -41,14 +45,20 @@ flowchart LR
   ecr -->|pull| ec2
   ssm[(SSM Parameter Store<br/>secrets)] -->|env at deploy time| ec2
   ec2 -->|container logs| cw[CloudWatch Logs<br/>+ task_run_failed alarm]
-  worker -->|rate-limited, Retry-After| sec[SEC EDGAR]
-  worker --> massive[Massive daily bars]
+  worker -->|rate-limited, Retry-After| sec[SEC EDGAR<br/>filings, Form 4 XML, XBRL]
+  worker --> massive[Massive<br/>daily bars, ticker details]
+  worker -->|high filings, once each| slack[Slack webhook]
+  api -->|check a ticker before adding it| sec
   you([Investor]) -->|SSM port forward| api
 ```
 
 - **All background work goes through `task_runs`** ([ADR 0003](docs/decisions/0003-scheduler-and-worker.md)). The scheduler only enqueues. The worker claims runs with `FOR UPDATE SKIP LOCKED` and holds a per-task advisory lock, so an overlapping run ends `skipped`. The "Run now" button and the CLI insert the same `pending` rows, and the API answers 202.
 - **Every fact row carries `known_at`,** the time it became public: EDGAR acceptance for filings, the 16:00 ET close for daily bars. Writes upsert on stable business keys, so every job is safe to rerun ([ADR 0002](docs/decisions/0002-baseline-data-model.md), [ADR 0004](docs/decisions/0004-sec-filings-ingestion.md), [ADR 0006](docs/decisions/0006-edgar-acceptance-time-is-utc.md)).
 - **Data providers are treated politely.** SEC requests carry a declared User-Agent and are rate-limited on the client side. Every HTTP call retries with exponential backoff and honours `Retry-After`. A missing credential fails the run with a clear error instead of falling back to placeholder data.
+- **Alerts are decided by plain rules, per company** ([ADR 0007](docs/decisions/0007-filing-issuer-links.md), [ADR 0008](docs/decisions/0008-materiality-rules-v0.md)). A filing is linked to every watchlist company EDGAR lists it under. It is high for a company when it is an 8-K with item 1.01, 2.02, 4.02 or 5.02 from a domestic filer, or a Form 4 open-market purchase of that company's shares, read from the Form 4 XML. Everything else is low and only shown in the UI.
+- **Each high filing reaches Slack once** ([ADR 0009](docs/decisions/0009-slack-notifier.md)). An outbox keyed on accession number and channel deduplicates. History and stale filings are never pushed. Delivery happens in the same 5-minute poll that found the filing, and each alert records how long it took from EDGAR acceptance.
+- **Tickers are onboarded, not hand-seeded** ([ADR 0010](docs/decisions/0010-ticker-onboarding.md)). A symbol is checked with SEC before it is added, so the watchlist only holds real companies. A job then ties it to its SEC issuer, cross-checks it with the price provider, and loads two years of filings, daily prices (from the listing date, since a ticker can be reused) and XBRL facts, moving it from pending to backfilling to ready.
+- **Failures page someone.** Every failed run writes one `task_run_failed` log line, which a CloudWatch alarm turns into an email.
 - **Sign-in** uses PBKDF2 password hashes, an HMAC-signed HttpOnly cookie, and a login lockout. Every `/api` route except login and logout requires a session ([ADR 0005](docs/decisions/0005-session-auth.md)).
 
 Other decisions are recorded in [`docs/decisions/`](docs/decisions).
@@ -58,7 +68,7 @@ Other decisions are recorded in [`docs/decisions/`](docs/decisions).
 | Milestone | Status | What it delivers |
 | --- | --- | --- |
 | **M0** Showcase repo on AWS | Done, Nov 2026 | CI with gitleaks, Terraform for stage 1, auto-deploy to EC2 on merge, scheduler and worker, SEC filings and daily price ingestion, sign-in, the Tasks page, and a read-only Alerts list of stored filings |
-| **M1** Alerts live | In progress | Materiality rules v0 (8-K items 1.01, 2.02, 4.02, 5.02 and Form 4 open-market purchases), Slack alerts within 10 minutes of EDGAR acceptance, ticker onboarding, materiality and Slack delivery on the Alerts page, the Watchlist page, and the `task_run_failed` log line that feeds the existing alarm |
+| **M1** Alerts live | Built; waiting on a live 8-K | Materiality rules v0 (8-K items 1.01, 2.02, 4.02, 5.02 and Form 4 open-market purchases), Slack alerts deduplicated by accession number, ticker onboarding with the Watchlist page, materiality and Slack delivery on the Alerts page, an Alert detail page with acceptance-to-Slack timing, and the `task_run_failed` alarm. The last check, a real watchlist 8-K reaching Slack within 10 minutes of EDGAR acceptance, waits for one to be filed |
 | **M2** Evidence harness | Planned | As-of data access with tests proving lookahead is blocked, event studies with costs, and a base rate (with sample size) on every alert |
 | **M3** Explain | Planned | XBRL fundamentals and a year-over-year 10-K diff with citations to filing sections |
 | **M4** Journal | Planned | Decision ledger, and returns against QQQ split into alpha and beta |
@@ -66,7 +76,7 @@ Other decisions are recorded in [`docs/decisions/`](docs/decisions).
 
 **Out of scope:** trade execution and broker connections; buy or sell recommendations; options, intraday data and order books; charting, screeners and a general fundamentals UI; and multi-user SaaS. Broker apps and TradingView already cover those well.
 
-**Watchlist:** NVDA, SPCX (SpaceX), ANT (Anthropic), GOOGL, AMZN and NBIS (Nebius, a foreign private issuer that files 20-F and 6-K), with QQQ as the benchmark and SPY for reference.
+**Watchlist:** NVDA, SPCX (SpaceX), ANT (Anthropic), GOOGL, AMZN and NBIS (Nebius, a foreign private issuer that files 20-F and 6-K, though its insiders file Form 4), with QQQ as the benchmark and SPY for reference. More tickers are added on the Watchlist page.
 
 ## Run locally
 
@@ -129,9 +139,11 @@ Infrastructure, and how to reach the host and the UI over SSM, is in [`infra/ter
 
 | Path | Purpose |
 | --- | --- |
-| `ingestion/` | Providers, normalisers, raw → normalised |
-| `orchestration/` | Scheduler, task runs, locks, dispatch |
-| `alerts/`, `research/`, `filings/`, `ledger/` | Later milestones (M1–M4) |
+| `ingestion/` | Providers (SEC, Massive), normalisers, the SEC poller, price bars, ticker onboarding |
+| `orchestration/` | Scheduler, task runs, locks, dispatch, migrations |
+| `alerts/` | Materiality rules, classification, the Slack notifier and its outbox |
+| `filings/` | 8-K item titles, Form 4 XML, XBRL company facts, EDGAR links |
+| `research/`, `ledger/` | Later milestones (M2, M4) |
 | `api/` | FastAPI app; also serves the built web UI |
 | `web/` | React + TypeScript frontend |
 | `infra/` | Terraform, Compose files, SQL migrations |
