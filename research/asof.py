@@ -6,7 +6,8 @@ Research code reads stored facts only through :class:`AsOf`. Every query it runs
 - a daily bar from its close (16:00 New York time on the trading date), for watchlist bars
   (split-adjusted) and market-wide bars (as traded) alike,
 - a stock split from the start of its execution day in New York,
-- a filing, and the Form 4 rows and XBRL values it carries, from EDGAR acceptance.
+- a filing, and the Form 4 rows and XBRL values it carries, from EDGAR acceptance;
+- a market-wide insider transaction from SEC's quarterly datasets, from the end of its filing date.
 
 The comparison is strict. A filing accepted at 16:05:00 is not visible at ``as_of`` 16:05:00.
 
@@ -33,6 +34,8 @@ FACT_TABLES = (
     "filings",
     "filing_issuers",
     "form4_transactions",
+    "insider_filings",
+    "insider_transactions",
     "xbrl_facts",
 )
 
@@ -116,6 +119,32 @@ class Form4Row:
     acquired_disposed: str | None
     shares: Decimal | None
     price_per_share: Decimal | None
+    known_at: datetime
+
+
+@dataclass(frozen=True)
+class InsiderTransaction:
+    """A non-derivative transaction from SEC's Insider Transactions Data Sets, with its filing (ADR 0014)."""
+
+    accession_no: str
+    line_sk: int
+    document_type: str
+    filing_date: date
+    issuer_cik: str
+    issuer_name: str | None
+    issuer_symbol: str | None
+    owner_names: str | None
+    owner_relationships: str | None
+    owner_titles: str | None
+    aff10b5one: bool | None
+    security_title: str | None
+    transaction_date: date | None
+    transaction_code: str
+    acquired_disposed: str | None
+    shares: float | None
+    price_per_share: float | None
+    shares_owned_after: float | None
+    direct_indirect: str | None
     known_at: datetime
 
 
@@ -287,6 +316,46 @@ class AsOf:
             order_by="t.known_at, t.accession_no, t.line_no",
         )
         return [Form4Row(*row) for row in rows]
+
+    def insider_transactions(
+        self,
+        *,
+        issuer_cik: str | None = None,
+        codes: tuple[str, ...] | list[str] | None = None,
+        document_types: tuple[str, ...] | list[str] | None = None,
+        since: datetime | None = None,
+    ) -> list[InsiderTransaction]:
+        """Market-wide insider transactions whose filing was public before ``as_of``, oldest first.
+
+        A filing counts as public from midnight New York after its filing date: the datasets carry no
+        acceptance time.
+        """
+        where: list[str] = []
+        params: dict[str, Any] = {}
+        if issuer_cik is not None:
+            where.append("f.issuer_cik = %(issuer_cik)s")
+            params["issuer_cik"] = issuer_cik
+        if codes is not None:
+            where.append("t.transaction_code = ANY(%(codes)s)")
+            params["codes"] = list(codes)
+        if document_types is not None:
+            where.append("f.document_type = ANY(%(document_types)s)")
+            params["document_types"] = list(document_types)
+        if since is not None:
+            where.append("f.known_at >= %(since)s")
+            params["since"] = since
+        rows = self._select(
+            "SELECT t.accession_no, t.line_sk, f.document_type, f.filing_date, f.issuer_cik, f.issuer_name, "
+            "f.issuer_symbol, f.owner_names, f.owner_relationships, f.owner_titles, f.aff10b5one, t.security_title, "
+            "t.transaction_date, t.transaction_code, t.acquired_disposed, t.shares, t.price_per_share, "
+            "t.shares_owned_after, t.direct_indirect, f.known_at "
+            "FROM insider_transactions t JOIN insider_filings f ON f.accession_no = t.accession_no",
+            "f.known_at",
+            where,
+            params,
+            order_by="f.known_at, t.accession_no, t.line_sk",
+        )
+        return [InsiderTransaction(*row) for row in rows]
 
     def xbrl_facts(self, cik: str, concept: str, *, unit: str | None = None) -> list[XbrlFact]:
         """Every value filed for ``concept`` before ``as_of``, restated ones included, oldest first."""

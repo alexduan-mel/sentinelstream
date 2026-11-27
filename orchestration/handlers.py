@@ -12,12 +12,13 @@ from collections.abc import Callable, Mapping
 
 from psycopg2.extensions import connection as Connection
 
-from ingestion import market_bars, onboarding, price_bars, sec_filings, splits
+from ingestion import insider_datasets, market_bars, onboarding, price_bars, sec_filings, splits
 from orchestration.task_runs import RunResult, TaskRun
 
 Handler = Callable[[TaskRun, Connection], RunResult]
 
 HANDLERS: Mapping[str, Handler] = {
+    insider_datasets.TASK_ID: insider_datasets.ingest_insider_datasets,
     market_bars.TASK_ID: market_bars.ingest_market_bars,
     onboarding.TASK_ID: onboarding.onboard_tickers,
     price_bars.TASK_ID: price_bars.ingest_prices,

@@ -27,8 +27,10 @@ SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
 SUBMISSIONS_PAGE_URL = "https://data.sec.gov/submissions/{name}"
 COMPANY_FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
 ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{folder}/{name}"
+INSIDER_DATASETS_URL = "https://www.sec.gov/data-research/sec-markets-data/insider-transactions-data-sets"
 REQUESTS_PER_SECOND = 5
 MAX_RESPONSE_BYTES = 20_000_000
+MAX_DATASET_BYTES = 200_000_000
 TIMEOUT = httpx.Timeout(20.0, connect=5.0)
 
 SHARED_PACER = Pacer(1.0 / REQUESTS_PER_SECOND)
@@ -37,6 +39,8 @@ _EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 _CIK = re.compile(r"^[0-9]{10}$")
 _ACCESSION = re.compile(r"^[0-9]{10}-[0-9]{2}-[0-9]{6}$")
 _ARCHIVE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$")
+# A dataset link on the index page: a path on www.sec.gov ending in e.g. 2025q3_form345.zip.
+_DATASET_LINK = re.compile(r'href="(/files/[A-Za-z0-9/_.-]*?/(\d{4}q[1-4])_form345\.zip)"')
 _SUBMISSIONS_PAGE = re.compile(r"^CIK[0-9]{10}-submissions-[0-9]{3}\.json$")
 
 
@@ -103,7 +107,7 @@ class SecClient:
         except ValueError as exc:
             raise SecError(f"SEC response for {url} is not JSON") from exc
 
-    def _get(self, url: str) -> httpx.Response:
+    def _get(self, url: str, *, max_bytes: int = MAX_RESPONSE_BYTES) -> httpx.Response:
         response = send_with_retries(
             lambda: self._http.get(url),
             pacer=self._pacer,
@@ -116,8 +120,8 @@ class SecClient:
         if not 200 <= response.status_code < 300:
             hint = " (check SEC_USER_AGENT and SEC fair-access limits)" if response.status_code in (403, 429) else ""
             raise SecError(f"SEC request failed: HTTP {response.status_code} for {url}{hint}")
-        if len(response.content) > MAX_RESPONSE_BYTES:
-            raise SecError(f"SEC response for {url} exceeds {MAX_RESPONSE_BYTES} bytes")
+        if len(response.content) > max_bytes:
+            raise SecError(f"SEC response for {url} exceeds {max_bytes} bytes")
         return response
 
     def archive_file(self, cik: str, accession_no: str, name: str) -> bytes:
@@ -130,6 +134,24 @@ class SecClient:
             raise ValueError(f"not a plain file name: {name!r}")
         url = ARCHIVE_URL.format(cik=int(cik), folder=accession_no.replace("-", ""), name=name)
         return self._get(url).content
+
+    def insider_dataset_links(self) -> dict[str, str]:
+        """Quarter (``2025q3``) -> URL of each Insider Transactions Data Set listed on SEC's index page.
+
+        Links are read from the page because SEC keeps the files in more than one folder.
+        """
+        page = self._get(INSIDER_DATASETS_URL).text
+        links = {quarter: f"https://www.sec.gov{path}" for path, quarter in _DATASET_LINK.findall(page)}
+        if not links:
+            raise SecError("SEC insider datasets page lists no datasets; its layout may have changed")
+        return links
+
+    def insider_dataset(self, url: str) -> httpx.Response:
+        """One quarter's Insider Transactions Data Set (a ZIP of tab-separated files)."""
+        parsed = httpx.URL(url)
+        if parsed.host != "www.sec.gov" or ".." in parsed.path or not _DATASET_LINK.match(f'href="{parsed.path}"'):
+            raise ValueError(f"not an SEC insider dataset URL: {url!r}")
+        return self._get(url, max_bytes=MAX_DATASET_BYTES)
 
     def ticker_map(self) -> list[dict[str, Any]]:
         """SEC's ticker → CIK map, one dict per row (``cik``, ``name``, ``ticker``, ``exchange``)."""
