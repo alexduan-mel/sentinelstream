@@ -6,6 +6,8 @@ WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
+# The Glossary page is built from docs/glossary.md (imported as ../../../docs/glossary.md).
+COPY docs/glossary.md /docs/glossary.md
 RUN npm run build
 
 FROM python:3.11-slim AS app

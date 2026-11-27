@@ -9,7 +9,8 @@ import { useTimeZone, type ZoneChoice } from "../lib/timeZone";
 export const NAV_ITEMS = [
   { key: "/", label: "Alerts" },
   { key: "/watchlist", label: "Watchlist" },
-  { key: "/tasks", label: "Tasks" }
+  { key: "/tasks", label: "Tasks" },
+  { key: "/glossary", label: "Glossary" }
 ];
 
 /** The nav tab for a path: Alerts for "/" and alert detail pages, other tabs also for their sub-paths. */

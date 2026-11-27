@@ -10,6 +10,8 @@ export default defineConfig({
     testTimeout: 20_000
   },
   server: {
+    // The glossary page reads ../docs/glossary.md, outside the web root.
+    fs: { allow: [".."] },
     proxy: {
       "/api": {
         target: "http://localhost:8000",
