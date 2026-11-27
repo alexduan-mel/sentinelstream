@@ -54,7 +54,7 @@ Nothing is smaller than 12px.
 
 ## Layout
 
-- **Top bar** (48px, full width, bottom border): the text wordmark "SentinelStream" on the left; nav tabs **Alerts, Watchlist, Tasks**, with a 2px underline on the active tab; on the right, a user menu showing the username, with "Sign out". Left of the user menu, a small ET | AEDT toggle for the time zone (hidden when the browser's own zone is US Eastern). Nothing else goes in the top bar.
+- **Top bar** (48px, full width, bottom border): the text wordmark "SentinelStream" on the left; nav tabs **Alerts, Watchlist, Tasks, Glossary**, with a 2px underline on the active tab; on the right, a user menu showing the username, with "Sign out". Left of the user menu, a small ET | AEDT toggle for the time zone (hidden when the browser's own zone is US Eastern). Nothing else goes in the top bar.
 - **Page**: a title row (title plus a muted count, e.g. "Alerts · 15"), an optional filter row, then content. Pages scroll normally. There are no docked panes, no command palette and no keyboard-shortcut bar.
 - **Times**: stored in UTC. Shown in US Eastern by default (`14:32 ET`), or in the browser's own zone (`14:32 AEDT`; AEST in winter, as Intl follows daylight saving) when the viewer picks it with the ET | AEDT toggle in the top bar. The choice is remembered per browser. Today: the clock time with a muted relative time (`8m ago`). Earlier: `Nov 23 14:32 ET`. Hovering a time shows the same moment in the other zone. Schedules tied to the US market keep ET ("Weekdays 18:30 ET"). The accepted-date filter uses calendar days in the zone shown. Durations: `3.4s`.
 - **States**: every data view has a loading state (Table `loading`), an empty state (one line of muted text, no illustration) and an error state (inline Ant Design `Alert` with a Retry button).
@@ -106,6 +106,10 @@ Opened by clicking a row on Alerts (the "SEC ↗" link still opens EDGAR). The A
 - **Companies it is listed under**: one row per linked issuer with its own materiality, the rule's reason, whether it was news or history for that issuer, and when it was first seen.
 - **Form 4 transactions** (only when stored): reporting owner and role, security, date, code with SEC's meaning ("P · Open-market or private purchase"), shares (+ acquired, − disposed), price, shares owned after, direct or indirect.
 - Base rates (M2), key financials (M3) and "Log a decision" (M4) are added by those milestones, not shown as placeholders.
+
+### Glossary (`/glossary`)
+
+The text of `docs/glossary.md`, the one source for both GitHub and the app: plain-language meanings of every term the app uses, grouped as SEC and filings, Alerts, Prices and markets, Research, and The app. A search box narrows the list to terms whose name or explanation contains every word typed. Each term has an anchor (`/glossary#cik`), so other pages can link to it. The file may only use the Markdown the page renders (headings, paragraphs, bold, code); a test fails otherwise.
 
 ### Ticker deep dive (M3)
 
