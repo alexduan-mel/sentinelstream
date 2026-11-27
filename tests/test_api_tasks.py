@@ -48,9 +48,10 @@ def test_list_tasks_shows_seeded_definitions(signed_in_client) -> None:
     due_now = {
         task["task_id"]: (task["schedule_label"], task["trigger_mode"])
         for task in tasks
-        if task["task_id"] in ("ingest_market_bars", "ingest_splits", "onboard_tickers")
+        if task["task_id"] in ("ingest_insider_datasets", "ingest_market_bars", "ingest_splits", "onboard_tickers")
     }
     assert due_now == {
+        "ingest_insider_datasets": ("Every 1 h", "automatic"),
         "ingest_market_bars": ("Every 10 min", "automatic"),
         "ingest_splits": ("Daily 17:00 ET", "automatic"),
         "onboard_tickers": ("Daily 19:00 ET", "automatic"),

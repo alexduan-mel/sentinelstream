@@ -49,6 +49,9 @@ A company's directors, senior officers and anyone owning more than 10% of its sh
 ### Form 4
 The form an insider files, within two business days, to report buying or selling the company's shares. SentinelStream reads the details from each Form 4.
 
+### 10b5-1 plan
+A trading plan an insider sets up in advance, which then buys or sells on a schedule. Trades under one say less about what the insider thinks now than a trade they chose to make that day. Form 4s have a box for it.
+
 ### Transaction code
 The letter on each line of a Form 4 that says what kind of trade it was. **P** is a purchase on the open market or in a private deal, **S** a sale, **A** a grant or award, **F** shares withheld to pay tax, **M** an option exercise, **G** a gift. SentinelStream treats purchases (P) as high.
 
