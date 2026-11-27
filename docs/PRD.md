@@ -131,7 +131,7 @@ Region: us-east-1. Stage 1 avoids a NAT gateway and load balancer to keep cost l
 | --- | --- | --- | --- |
 | SEC EDGAR filings | 8-K, 10-K, 10-Q, 20-F, 6-K, Form 4 | Free | Declared User-Agent and client-side rate limiting |
 | SEC XBRL APIs (data.sec.gov) | Financial numbers for Explain | Free | Companies use different tags for the same item, so a mapping layer is needed |
-| Massive | Daily price bars | Paid plan | Provider rate limits |
+| Massive | Daily price bars, market-wide daily bars, stock splits | Free plan | 5 requests a minute; two years of history |
 | Finnhub | News (later) | Free tier | Short history, rate limits |
 | Slack incoming webhook | Alert push | Free | None |
 | OpenAI | Explain summaries (later) | Pay per use | Look-ahead bias in backtests; cite-or-reject |

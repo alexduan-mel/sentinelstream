@@ -1,4 +1,4 @@
-"""Massive (formerly Polygon) daily aggregates client.
+"""Massive (formerly Polygon) client: daily aggregates, grouped daily bars, splits and ticker details.
 
 Carried over from the prototype's ``ingestion/massive_client.py``. Massive authenticates with an
 ``apiKey`` query parameter, so raw URLs are never logged and the key is redacted from error text.
@@ -19,6 +19,7 @@ from ingestion.http import Pacer, send_with_retries
 BASE_URL = "https://api.massive.com"
 DEFAULT_RATE_LIMIT_PER_MINUTE = 5
 TIMEOUT = httpx.Timeout(15.0, connect=5.0)
+SPLITS_PAGE_LIMIT = 1000
 
 
 class MassiveConfigurationError(RuntimeError):
@@ -168,6 +169,46 @@ class MassiveClient:
             raise MassiveError(f"Massive returned split-adjusted bars for {what}; as-traded bars were asked for")
         payload["results"] = results
         return payload
+
+    def splits(self, date_from: date, date_to: date) -> list[dict[str, Any]]:
+        """Every split with an execution date in ``date_from``..``date_to`` inclusive, in one page.
+
+        Massive's paging repeated rows when tested (27 Nov 2026), so it is not followed: a window
+        that fills a page raises :class:`MassiveError` and must be asked for in smaller pieces. A
+        calendar quarter held about 400 splits in 2025.
+        """
+        what = f"splits {date_from.isoformat()}..{date_to.isoformat()}"
+        params = {
+            "execution_date.gte": date_from.isoformat(),
+            "execution_date.lte": date_to.isoformat(),
+            "limit": str(SPLITS_PAGE_LIMIT),
+            "apiKey": self._api_key,
+        }
+        try:
+            response = send_with_retries(
+                lambda: self._http.get("/v3/reference/splits", params=params),
+                pacer=self._pacer,
+                base_delay=self._base_delay,
+                describe=f"massive {what}",
+            )
+        except httpx.TransportError as exc:
+            raise MassiveError(f"Massive request for {what} failed: {self._redact(str(exc))}") from None
+        if response.status_code >= 400:
+            body = self._redact(response.text.strip())[:300]
+            hint = " Check MASSIVE_API_KEY and plan permissions." if response.status_code in (401, 403) else ""
+            raise MassiveError(f"Massive request for {what} failed: HTTP {response.status_code} {body}{hint}")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise MassiveError(f"Massive response for {what} is not JSON") from exc
+        if not isinstance(payload, dict) or str(payload.get("status") or "").upper() != "OK":
+            raise MassiveError(f"Massive returned an unexpected response for {what}")
+        results = payload.get("results") or []
+        if not isinstance(results, list):
+            raise MassiveError(f"Massive results for {what} are not a list")
+        if payload.get("next_url") or len(results) >= SPLITS_PAGE_LIMIT:
+            raise MassiveError(f"{what} fills a page of {SPLITS_PAGE_LIMIT}; ask for a shorter window")
+        return results
 
     def ticker_details(self, symbol: str) -> TickerDetails | None:
         """What Massive knows about the security now trading as ``symbol``; None if it knows none.

@@ -96,7 +96,7 @@ The last price of a stock in a trading session. Returns in SentinelStream are me
 How much a price changed, as a percentage. From $100 to $103 is a +3% return.
 
 ### Split and split-adjusted
-A split divides each share into several (or, rarely, merges several into one) without changing what the company is worth. A 4-for-1 split turns one $400 share into four $100 shares. Split-adjusted prices rescale the history before the split, so returns are not distorted.
+A split divides each share into several (or, in a reverse split, merges several into one) without changing what the company is worth. A 4-for-1 split turns one $400 share into four $100 shares. Split-adjusted prices rescale the history before the split, so returns are not distorted.
 
 ### As traded
 Prices exactly as they were on the day, not rescaled for later splits. A $400 share that later split 4-for-1 still shows $400 for the days before the split. SentinelStream keeps market-wide prices this way, so a rule like "$5 or more" sees the price people actually paid, and corrects returns across a split when it calculates them.

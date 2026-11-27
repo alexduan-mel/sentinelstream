@@ -5,6 +5,7 @@ Research code reads stored facts only through :class:`AsOf`. Every query it runs
 
 - a daily bar from its close (16:00 New York time on the trading date), for watchlist bars
   (split-adjusted) and market-wide bars (as traded) alike,
+- a stock split from the start of its execution day in New York,
 - a filing, and the Form 4 rows and XBRL values it carries, from EDGAR acceptance.
 
 The comparison is strict. A filing accepted at 16:05:00 is not visible at ``as_of`` 16:05:00.
@@ -25,7 +26,15 @@ from psycopg2.extensions import connection as Connection
 
 # Fact tables this layer reads. tests/test_asof.py uses this list to check that no other research
 # module queries them directly.
-FACT_TABLES = ("price_bars", "market_bars", "filings", "filing_issuers", "form4_transactions", "xbrl_facts")
+FACT_TABLES = (
+    "price_bars",
+    "market_bars",
+    "stock_splits",
+    "filings",
+    "filing_issuers",
+    "form4_transactions",
+    "xbrl_facts",
+)
 
 
 class AsOfError(ValueError):
@@ -66,6 +75,22 @@ class MarketBar:
         if self.volume is None or self.vwap is None:
             return None
         return self.volume * self.vwap
+
+
+@dataclass(frozen=True)
+class Split:
+    """``split_from`` shares became ``split_to`` shares on ``execution_date`` (ADR 0013)."""
+
+    symbol: str
+    execution_date: date
+    split_from: float
+    split_to: float
+    known_at: datetime
+
+    @property
+    def share_factor(self) -> float:
+        """Shares after per share before: 10.0 for a 10-for-1 split, 0.1 for a 1-for-10 reverse split."""
+        return self.split_to / self.split_from
 
 
 @dataclass(frozen=True)
@@ -171,6 +196,29 @@ class AsOf:
             order_by="m.trading_date",
         )
         return [MarketBar(*row) for row in rows]
+
+    def splits(self, symbol: str, *, start: date | None = None, end: date | None = None) -> list[Split]:
+        """Splits of ``symbol`` (matched exactly) in effect before ``as_of``, by execution date.
+
+        To compare two as-traded closes across splits, multiply the later close by the
+        ``share_factor`` of every split after the earlier close's day, up to and including the later one's.
+        """
+        where = ["s.symbol = %(symbol)s"]
+        params: dict[str, Any] = {"symbol": symbol}
+        if start is not None:
+            where.append("s.execution_date >= %(start)s")
+            params["start"] = start
+        if end is not None:
+            where.append("s.execution_date <= %(end)s")
+            params["end"] = end
+        rows = self._select(
+            "SELECT s.symbol, s.execution_date, s.split_from, s.split_to, s.known_at FROM stock_splits s",
+            "s.known_at",
+            where,
+            params,
+            order_by="s.execution_date, s.id",
+        )
+        return [Split(*row) for row in rows]
 
     def filings(
         self,
