@@ -3,7 +3,8 @@
 Research code reads stored facts only through :class:`AsOf`. Every query it runs ends in
 ``known_at < as_of``, so a study dated ``as_of`` sees exactly what was public before that moment:
 
-- a daily bar from its close (16:00 New York time on the trading date),
+- a daily bar from its close (16:00 New York time on the trading date), for watchlist bars
+  (split-adjusted) and market-wide bars (as traded) alike,
 - a filing, and the Form 4 rows and XBRL values it carries, from EDGAR acceptance.
 
 The comparison is strict. A filing accepted at 16:05:00 is not visible at ``as_of`` 16:05:00.
@@ -24,7 +25,7 @@ from psycopg2.extensions import connection as Connection
 
 # Fact tables this layer reads. tests/test_asof.py uses this list to check that no other research
 # module queries them directly.
-FACT_TABLES = ("price_bars", "filings", "filing_issuers", "form4_transactions", "xbrl_facts")
+FACT_TABLES = ("price_bars", "market_bars", "filings", "filing_issuers", "form4_transactions", "xbrl_facts")
 
 
 class AsOfError(ValueError):
@@ -42,6 +43,29 @@ class Bar:
     volume: int | None
     data_quality: str
     known_at: datetime
+
+
+@dataclass(frozen=True)
+class MarketBar:
+    """One symbol's day as traded: not split-adjusted (ADR 0012)."""
+
+    symbol: str
+    trading_date: date
+    open: float | None
+    high: float | None
+    low: float | None
+    close: float
+    volume: float | None
+    vwap: float | None
+    transactions: int | None
+    known_at: datetime
+
+    @property
+    def traded_value(self) -> float | None:
+        """Dollars that changed hands: volume times the volume-weighted average price."""
+        if self.volume is None or self.vwap is None:
+            return None
+        return self.volume * self.vwap
 
 
 @dataclass(frozen=True)
@@ -123,6 +147,30 @@ class AsOf:
             order_by="b.trading_date",
         )
         return [Bar(*row) for row in rows]
+
+    def market_bars(self, symbol: str, *, start: date | None = None, end: date | None = None) -> list[MarketBar]:
+        """Market-wide daily bars for ``symbol`` as traded, whose close came before ``as_of``, oldest first.
+
+        ``symbol`` is the symbol as traded on each day, matched exactly (Massive writes some share
+        classes with lower-case letters); it is not a company identity.
+        """
+        where = ["m.symbol = %(symbol)s"]
+        params: dict[str, Any] = {"symbol": symbol}
+        if start is not None:
+            where.append("m.trading_date >= %(start)s")
+            params["start"] = start
+        if end is not None:
+            where.append("m.trading_date <= %(end)s")
+            params["end"] = end
+        rows = self._select(
+            "SELECT m.symbol, m.trading_date, m.open, m.high, m.low, m.close, m.volume, m.vwap, m.transactions, "
+            "m.known_at FROM market_bars m",
+            "m.known_at",
+            where,
+            params,
+            order_by="m.trading_date",
+        )
+        return [MarketBar(*row) for row in rows]
 
     def filings(
         self,

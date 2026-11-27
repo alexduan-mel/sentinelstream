@@ -9,7 +9,7 @@ Read `docs/PRD.md` for the full product spec and milestones. This file is the wo
 M2 gives every high alert a base rate: how stocks moved, compared with QQQ, after similar past events. It is done when every box is ticked:
 
 - [x] As-of access layer: research code reads facts only through `research/asof.py`, which enforces `known_at < as_of`; tests prove lookahead is blocked (ADR 0011)
-- [ ] Market-wide daily bars for US-listed operating companies, two years back, backfilled in chunks that never hold up the SEC poll, then updated daily
+- [x] Market-wide daily bars for every US stock, as traded, two years back, backfilled in chunks that never hold up the SEC poll, then updated daily (ADR 0012)
 - [ ] Market-wide insider purchases (Form 4 code P) from SEC's Insider Transactions Data Sets
 - [ ] Base-rate calculator: returns 1, 5, 20 and 60 sessions after an event, compared with QQQ (SPY shown), after 0.10% costs per trade, with sample size, median, average, hit rate and a confidence range
 - [ ] Insider-buying effect reproduced: a write-up in `docs/` with the result, whichever way it comes out

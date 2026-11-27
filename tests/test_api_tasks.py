@@ -43,11 +43,15 @@ def test_list_tasks_shows_seeded_definitions(signed_in_client) -> None:
 
     assert response.status_code == 200
     tasks = response.json()
-    # Onboarding is due at once after its migration (to onboard the seeded watchlist), then daily.
+    # Onboarding and market bars are due at once after their migrations, then on their schedules.
     onboarding = tasks.pop()
     assert onboarding["task_id"] == "onboard_tickers"
     assert (onboarding["schedule_label"], onboarding["trigger_mode"]) == ("Daily 19:00 ET", "automatic")
     assert onboarding["next_run_at"] is not None
+    market_bars = tasks.pop(0)
+    assert market_bars["task_id"] == "ingest_market_bars"
+    assert (market_bars["schedule_label"], market_bars["trigger_mode"]) == ("Every 10 min", "automatic")
+    assert market_bars["next_run_at"] is not None
     assert tasks == [
         {
             "task_id": "ingest_prices",
@@ -96,7 +100,8 @@ def test_run_now_queues_a_pending_manual_run(signed_in_client, connect_app_db) -
         cursor.execute("SELECT status, trigger_source, run_mode, requested_by FROM task_runs WHERE id = %s", (run_id,))
         assert cursor.fetchone() == ("pending", "api", "manual", "web:admin")
 
-    last_run = signed_in_client.get("/api/tasks").json()[0]["last_run"]
+    by_id = {task["task_id"]: task for task in signed_in_client.get("/api/tasks").json()}
+    last_run = by_id["ingest_prices"]["last_run"]
     assert last_run["id"] == run_id and last_run["status"] == "pending"
 
 

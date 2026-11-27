@@ -98,6 +98,12 @@ How much a price changed, as a percentage. From $100 to $103 is a +3% return.
 ### Split and split-adjusted
 A split divides each share into several (or, rarely, merges several into one) without changing what the company is worth. A 4-for-1 split turns one $400 share into four $100 shares. Split-adjusted prices rescale the history before the split, so returns are not distorted.
 
+### As traded
+Prices exactly as they were on the day, not rescaled for later splits. A $400 share that later split 4-for-1 still shows $400 for the days before the split. SentinelStream keeps market-wide prices this way, so a rule like "$5 or more" sees the price people actually paid, and corrects returns across a split when it calculates them.
+
+### Traded value
+How many dollars' worth of a stock changed hands in a day: shares traded times the average price. A $20 stock trading 50,000 shares a day has a traded value of $1 million.
+
 ### Listing date
 The day a security started trading under its current ticker. Prices from before it belong to whatever used the ticker earlier, so SentinelStream ignores them.
 
@@ -124,6 +130,9 @@ What buying and later selling a stock costs beyond the quoted price: the spread,
 
 ### Liquidity
 How easily a stock can be traded without moving its price, roughly how much of it trades each day. Thinly traded stocks have wider spreads and higher trading costs.
+
+### Survivorship bias
+Studying only companies that still exist today makes history look better than it was, because the ones that went bust or were delisted drop out. SentinelStream keeps every stock's daily prices as they come in, including ones that later disappear, to avoid it.
 
 ## Research
 
