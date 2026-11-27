@@ -11,7 +11,7 @@ M2 gives every high alert a base rate: how stocks moved, compared with QQQ, afte
 - [x] As-of access layer: research code reads facts only through `research/asof.py`, which enforces `known_at < as_of`; tests prove lookahead is blocked (ADR 0011)
 - [x] Market-wide daily bars for every US stock, as traded, two years back, backfilled in chunks that never hold up the SEC poll, then updated daily (ADR 0012)
 - [x] Market-wide insider purchases (Form 4 code P) from SEC's Insider Transactions Data Sets (ADR 0014)
-- [ ] Base-rate calculator: returns 1, 5, 20 and 60 sessions after an event, compared with QQQ (SPY shown), after 0.10% costs per trade, with sample size, median, average, hit rate and a confidence range
+- [x] Base-rate calculator: returns 1, 5, 20 and 60 sessions after an event, compared with QQQ (SPY shown), after 0.10% costs per trade, with sample size, median, average, hit rate and a confidence range (ADR 0015)
 - [ ] Insider-buying effect reproduced: a write-up in `docs/` with the result, whichever way it comes out
 - [ ] Market-wide 8-K item history
 - [ ] A base rate on each high alert, on the Alert detail page and in Slack, pooled across similar stocks when the sample is small
@@ -27,10 +27,10 @@ M1 is built: the SEC poller every 5 minutes, filing-to-issuer links, materiality
 
 ## Architecture (stage 1)
 
-One EC2 instance runs Docker Compose with four services: `api` (FastAPI, also serves the built frontend), `scheduler`, `worker`, `postgres`. GitHub Actions authenticates to AWS with OIDC, so no AWS keys are stored anywhere. Secrets live in SSM Parameter Store and are injected at container start.
+One EC2 instance runs Docker Compose with five services: `api` (FastAPI, also serves the built frontend), `scheduler`, `worker`, `research-worker` (long research calculations, so they never hold up the SEC poll; ADR 0016), `postgres`. GitHub Actions authenticates to AWS with OIDC, so no AWS keys are stored anywhere. Secrets live in SSM Parameter Store and are injected at container start.
 
 ```
-GitHub Actions ──push──► ECR ──pull──► EC2 (Docker Compose: api, scheduler, worker, postgres)
+GitHub Actions ──push──► ECR ──pull──► EC2 (Docker Compose: api, scheduler, worker, research-worker, postgres)
        └──────deploy via SSM Run Command──────┘          │
                                      CloudWatch Logs ◄────┤
                                      S3 (filing archive, DB backups) ◄─┘
