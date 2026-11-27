@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Descriptions, Space, Table, Tag, Typography, type TableColumnsType } from "antd";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 
 import { errorMessage } from "../api/client";
 import {
@@ -148,6 +148,7 @@ const transactionColumns: TableColumnsType<Form4Transaction> = [
 /** One filing: what it is, why it was or was not pushed, how fast, and its Form 4 rows (DESIGN.md). */
 export function AlertDetailPage() {
   const { accessionNo = "" } = useParams();
+  const location = useLocation();
   const [state, setState] = useState<{
     data: FilingDetail | null;
     loading: boolean;
@@ -167,7 +168,9 @@ export function AlertDetailPage() {
     void load();
   }, [load]);
 
-  const back = <Link to="/">← Alerts</Link>;
+  // Back to the list as it was: its filters travel in the address (see AlertsPage).
+  const fromSearch = (location.state as { fromSearch?: string } | null)?.fromSearch ?? "";
+  const back = <Link to={`/${fromSearch}`}>← Alerts</Link>;
   if (state.error) {
     return (
       <Space orientation="vertical" size={16} className="w-full">

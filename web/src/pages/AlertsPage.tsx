@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import dayjs from "dayjs";
 import {
   DatePicker,
   Segmented,
@@ -110,40 +111,112 @@ const columns: TableColumnsType<Filing> = [
   },
   {
     title: "",
-    key: "sec",
-    width: 72,
+    key: "links",
+    width: 128,
     align: "right",
     render: (_, filing) => (
-      <a
-        href={filing.sec_url}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label={`Open ${filing.accession_no} on SEC EDGAR`}
-        onClick={(event) => event.stopPropagation()} // the row itself opens the detail page
-      >
-        SEC ↗
-      </a>
+      <Space size={12} onClick={(event) => event.stopPropagation()}>
+        <DetailsLink accessionNo={filing.accession_no} />
+        <a
+          href={filing.sec_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`Open ${filing.accession_no} on SEC EDGAR`}
+        >
+          SEC ↗
+        </a>
+      </Space>
     )
   }
 ];
 
+/** Where the list was, so returning from a filing lands on the same filtered view and position. */
+const RETURN_KEY = "alerts-return";
+
+function rememberPosition(search: string) {
+  try {
+    sessionStorage.setItem(RETURN_KEY, JSON.stringify({ search, y: window.scrollY }));
+  } catch {
+    // Storage can be unavailable (private windows); returning then starts at the top.
+  }
+}
+
+function DetailsLink({ accessionNo }: { accessionNo: string }) {
+  const { search } = useLocation();
+  return (
+    <Link
+      to={`/alerts/${accessionNo}`}
+      state={{ fromSearch: search }}
+      onClick={() => rememberPosition(search)}
+      aria-label={`Details of ${accessionNo}`}
+    >
+      Details
+    </Link>
+  );
+}
+
+type Filters = {
+  tickers: string[];
+  formTypes: string[];
+  range: [string, string] | null;
+  materiality: MaterialityFilter;
+  page: number;
+};
+
+/** The list's filters live in the address (?ticker=NVDA&materiality=high&page=2), so Back,
+ *  "← Alerts" and bookmarks all return to the same view. */
+function readFilters(params: URLSearchParams): Filters {
+  const from = params.get("from") ?? "";
+  const to = params.get("to") ?? "";
+  const level = params.get("materiality");
+  return {
+    tickers: params.getAll("ticker"),
+    formTypes: params.getAll("form"),
+    range: from || to ? [from, to] : null,
+    materiality: level === "high" || level === "low" ? level : "all",
+    page: Math.max(1, Number.parseInt(params.get("page") ?? "1", 10) || 1)
+  };
+}
+
 /** Every stored SEC filing, newest first, with its materiality and Slack delivery. */
 export function AlertsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [params, setParams] = useSearchParams();
+  const search = params.toString();
+  const { tickers, formTypes, range, materiality, page } = useMemo(
+    () => readFilters(new URLSearchParams(search)),
+    [search]
+  );
   const [filings, setFilings] = useState<Loadable<FilingPage>>({
     data: null,
     loading: true,
     error: null
   });
   const [facets, setFacets] = useState<FilingFacets>({ tickers: [], form_types: [] });
-  const [tickers, setTickers] = useState<string[]>([]);
-  const [formTypes, setFormTypes] = useState<string[]>([]);
-  const [range, setRange] = useState<[string, string] | null>(null);
-  const [materiality, setMateriality] = useState<MaterialityFilter>("all");
   const [poller, setPoller] = useState<TaskDefinition | undefined>(undefined);
   const [now, setNow] = useState(() => new Date());
   const { zone: timeZone } = useTimeZone();
-  const [page, setPage] = useState(1);
+
+  // Filter changes replace the address rather than adding to history, so Back from a filing returns
+  // to the list as it was, not through every filter change. Any filter change goes back to page 1.
+  const setFilter = useCallback(
+    (key: string, value: string | string[] | null) => {
+      setParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.delete(key);
+          for (const item of Array.isArray(value) ? value : value ? [value] : []) {
+            next.append(key, item);
+          }
+          if (key !== "page") next.delete("page");
+          return next;
+        },
+        { replace: true }
+      );
+    },
+    [setParams]
+  );
 
   const loadFilings = useCallback(async () => {
     setFilings((current) => ({ ...current, loading: true, error: null }));
@@ -167,6 +240,21 @@ export function AlertsPage() {
   useEffect(() => {
     void loadFilings();
   }, [loadFilings]);
+
+  // Back from a filing: once its page of results is shown, scroll to where the list was.
+  useEffect(() => {
+    if (filings.loading || !filings.data) return;
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(RETURN_KEY) ?? "null") as {
+        search: string;
+        y: number;
+      } | null;
+      if (saved && saved.search === location.search) window.scrollTo(0, saved.y);
+      sessionStorage.removeItem(RETURN_KEY);
+    } catch {
+      // Unreadable or unavailable storage: stay at the top.
+    }
+  }, [filings.loading, filings.data, location.search]);
 
   // Filter options are a convenience: if they fail to load, the list still works unfiltered.
   useEffect(() => {
@@ -213,18 +301,12 @@ export function AlertsPage() {
             placeholder="All tickers"
             className="min-w-[200px]"
             value={tickers}
-            onChange={(value) => {
-              setTickers(value);
-              setPage(1);
-            }}
+            onChange={(value) => setFilter("ticker", value)}
             options={facets.tickers.map((ticker) => ({ value: ticker, label: ticker }))}
           />
           <Segmented<MaterialityFilter>
             value={materiality}
-            onChange={(value) => {
-              setMateriality(value);
-              setPage(1);
-            }}
+            onChange={(value) => setFilter("materiality", value === "all" ? null : value)}
             options={[
               { value: "all", label: "All" },
               { value: "high", label: "High" },
@@ -237,19 +319,32 @@ export function AlertsPage() {
             placeholder="All forms"
             className="min-w-[200px]"
             value={formTypes}
-            onChange={(value) => {
-              setFormTypes(value);
-              setPage(1);
-            }}
+            onChange={(value) => setFilter("form", value)}
             options={facets.form_types.map((form) => ({ value: form, label: form }))}
           />
           <DatePicker.RangePicker
             allowEmpty={[true, true]}
             className="w-[370px]"
             placeholder={[`Accepted from (${zone})`, `Accepted to (${zone})`]}
+            value={
+              range ? [range[0] ? dayjs(range[0]) : null, range[1] ? dayjs(range[1]) : null] : null
+            }
             onChange={(_, [from, to]) => {
-              setRange(from || to ? [from, to] : null);
-              setPage(1);
+              setParams(
+                (current) => {
+                  const next = new URLSearchParams(current);
+                  for (const [key, value] of [
+                    ["from", from],
+                    ["to", to]
+                  ] as const) {
+                    if (value) next.set(key, value);
+                    else next.delete(key);
+                  }
+                  next.delete("page");
+                  return next;
+                },
+                { replace: true }
+              );
             }}
           />
         </Space>
@@ -263,7 +358,14 @@ export function AlertsPage() {
           rowKey="accession_no"
           onRow={(filing) => ({
             className: "cursor-pointer",
-            onClick: () => navigate(`/alerts/${filing.accession_no}`)
+            onClick: () => {
+              // Selecting text in a row (to copy a reason, say) is not a request to open it.
+              if (window.getSelection()?.toString()) return;
+              rememberPosition(location.search);
+              navigate(`/alerts/${filing.accession_no}`, {
+                state: { fromSearch: location.search }
+              });
+            }
           })}
           size="small"
           tableLayout="fixed"
@@ -275,7 +377,7 @@ export function AlertsPage() {
             pageSize: FILINGS_PAGE_SIZE,
             total: filings.data?.total ?? 0,
             showSizeChanger: false,
-            onChange: setPage
+            onChange: (next) => setFilter("page", next > 1 ? String(next) : null)
           }}
           locale={{
             emptyText: (

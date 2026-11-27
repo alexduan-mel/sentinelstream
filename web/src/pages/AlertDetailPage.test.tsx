@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
@@ -103,13 +103,19 @@ const purchase: FilingDetail = {
   base_rates: [insiderBaseRate]
 };
 
-function renderAt(accession: string, body: unknown, status = 200) {
+function ListAddress() {
+  const { search } = useLocation();
+  return <div>alerts list{search}</div>;
+}
+
+function renderAt(accession: string, body: unknown, status = 200, fromSearch?: string) {
   const fetchMock = vi.fn(async () => new Response(JSON.stringify(body), { status }));
   vi.stubGlobal("fetch", fetchMock);
+  const entry = { pathname: `/alerts/${accession}`, state: fromSearch ? { fromSearch } : null };
   render(
-    <MemoryRouter initialEntries={[`/alerts/${accession}`]}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
-        <Route path="/" element={<div>alerts list</div>} />
+        <Route path="/" element={<ListAddress />} />
         <Route path="/alerts/:accessionNo" element={<AlertDetailPage />} />
       </Routes>
     </MemoryRouter>
@@ -208,6 +214,13 @@ describe("AlertDetailPage", () => {
     renderAt(purchase.accession_no, { ...purchase, materiality: "low", base_rates: [] });
     expect(await screen.findByRole("heading", { name: "AMZN · Form 4" })).toBeTruthy();
     expect(screen.queryByText("What followed similar filings")).toBeNull();
+  });
+
+  it("goes back to the filtered list it was opened from", async () => {
+    renderAt(purchase.accession_no, purchase, 200, "?materiality=high&ticker=AMZN");
+
+    fireEvent.click(await screen.findByRole("link", { name: "← Alerts" }));
+    expect(await screen.findByText("alerts list?materiality=high&ticker=AMZN")).toBeTruthy();
   });
 
   it("labels Form 4 codes from SEC's list", () => {
