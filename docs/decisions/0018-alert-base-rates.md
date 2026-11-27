@@ -35,4 +35,4 @@ M2 ends with a base rate on each high alert, shown on the Alert detail page and 
 - An alert shows the base rate from the latest daily run: never newer data than the alert itself, and at most a day old.
 - Until the market-wide backfills finish (bars, 8-Ks), base rates rest on partial history. Each row's `n` and range say how much.
 - About 5 kinds × (1 + up to 80 industries) × 2 settings × 4 horizons: a few thousand rows.
-- The Alert detail card and the Slack line come next, built on this lookup.
+- The Alert detail page shows them for high filings, and the Slack message adds one italic line per high event from the 20-session main-filter result ("History: after 1,977 past insider purchases across all US-listed companies, the next 20 sessions averaged +0.9% vs QQQ after costs; 55% beat QQQ (95% range -0.4% to +2.1%)."). The line is looked up from stored rows during delivery; if the lookup fails, the alert goes out without it.

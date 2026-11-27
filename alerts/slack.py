@@ -66,6 +66,7 @@ def format_message(alert: Alert) -> str:
     form = "Form 4" if alert.form_type == "4" else alert.form_type
     lines = [f"{tickers} · {_escape(form)}"]
     lines.extend(_escape(reason) for reason in alert.reasons)
+    lines.extend(f"_{_escape(line)}_" for line in alert.history)
     lines.append(f"Accepted {_accepted(alert.accepted_at)} · <{alert.sec_url}|Filing on SEC>")
     return "\n".join(lines)
 

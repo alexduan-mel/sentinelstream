@@ -14,7 +14,7 @@ M2 gives every high alert a base rate: how stocks moved, compared with QQQ, afte
 - [x] Base-rate calculator: returns 1, 5, 20 and 60 sessions after an event, compared with QQQ (SPY shown), after 0.10% costs per trade, with sample size, median, average, hit rate and a confidence range (ADR 0015)
 - [ ] Insider-buying effect reproduced: a write-up in `docs/` with the result, whichever way it comes out
 - [x] Market-wide 8-K item history (ADR 0017)
-- [ ] A base rate on each high alert, on the Alert detail page and in Slack, pooled across similar stocks when the sample is small
+- [x] A base rate on each high alert, on the Alert detail page and in Slack, pooled across similar stocks when the sample is small (ADR 0018)
 - [x] Split detection: a daily check of Massive's splits endpoint triggers a re-fetch (promised in ADR 0002); market-wide split data for research (ADR 0013)
 
 Next milestone after M2 is **M3: Explain** (see `docs/PRD.md`).

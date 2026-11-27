@@ -3,7 +3,12 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { form4CodeLabel, type FilingDetail } from "../api/filings";
+import {
+  form4CodeLabel,
+  type BaseRate,
+  type BaseRateStats,
+  type FilingDetail
+} from "../api/filings";
 import { installDomStubs } from "../test/dom";
 import { AlertDetailPage } from "./AlertDetailPage";
 
@@ -12,6 +17,42 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
+
+function stats(n: number, mean: number, extra: Partial<BaseRateStats> = {}): BaseRateStats {
+  return {
+    n,
+    mean,
+    median: mean / 2,
+    hit_rate: 0.55,
+    ci_low: -0.004,
+    ci_high: 0.021,
+    months: 22,
+    mean_gross_return: mean + 0.01,
+    mean_benchmark_return: 0.01,
+    mean_cost: 0.002,
+    mean_excess_vs_reference: mean + 0.001,
+    ended_early: 3,
+    ...extra
+  };
+}
+
+const insiderBaseRate: BaseRate = {
+  event_kind: "insider_purchase",
+  event_key: "",
+  label: "Insider open-market purchase",
+  scope: "market",
+  scope_label: "All US-listed companies (fewer than 30 in its industry, so pooled)",
+  as_of: "2026-11-27T11:00:00Z",
+  variants: {
+    main: {
+      "1": stats(2309, 0.0012),
+      "5": stats(2243, -0.004),
+      "20": stats(1977, 0.0085),
+      "60": stats(1276, 0.011, { ci_low: null, ci_high: null, months: 4 })
+    },
+    none: { "1": stats(9000, 0.02), "5": null, "20": stats(8000, 0.031), "60": null }
+  }
+};
 
 const purchase: FilingDetail = {
   accession_no: "0001018724-26-000002",
@@ -58,7 +99,8 @@ const purchase: FilingDetail = {
       shares_owned_after: 12400,
       direct_indirect: "D"
     }
-  ]
+  ],
+  base_rates: [insiderBaseRate]
 };
 
 function renderAt(accession: string, body: unknown, status = 200) {
@@ -128,6 +170,44 @@ describe("AlertDetailPage", () => {
     expect(await screen.findByText("No stored filing 0001045810-26-999999")).toBeTruthy();
     fireEvent.click(screen.getByRole("link", { name: "← Alerts" }));
     await waitFor(() => expect(screen.getByText("alerts list")).toBeTruthy());
+  });
+
+  it("shows what followed similar filings, with gains and losses coloured, for both filter settings", async () => {
+    renderAt(purchase.accession_no, purchase);
+
+    expect(await screen.findByText("What followed similar filings")).toBeTruthy();
+    expect(screen.getByText("Insider open-market purchase")).toBeTruthy();
+    expect(
+      screen.getByText(/All US-listed companies \(fewer than 30 in its industry, so pooled\)/)
+    ).toBeTruthy();
+    const twenty = screen.getByText("20 sessions").closest("tr") as HTMLElement;
+    expect(within(twenty).getByText("1,977")).toBeTruthy();
+    expect(within(twenty).getByText("+0.9%").className).toContain("text-positive");
+    expect(within(twenty).getByText("55%")).toBeTruthy();
+    expect(within(twenty).getByText("-0.4%").className).toContain("text-negative"); // range low
+    expect(within(twenty).getByText("+2.1%")).toBeTruthy();
+    expect(within(twenty).getByText("-0.2%")).toBeTruthy(); // average cost
+    const five = screen.getByText("5 sessions").closest("tr") as HTMLElement;
+    expect(within(five).getAllByText("-0.4%")[0].className).toContain("text-negative");
+    // Too few months for a range: a dash, explained on hover.
+    const sixty = screen.getByText("60 sessions").closest("tr") as HTMLElement;
+    expect(within(sixty).queryByText(/to/)).toBeNull();
+    expect(screen.getByText(/not a forecast/)).toBeTruthy();
+
+    fireEvent.click(screen.getByText("All stocks"));
+    const all = screen.getByText("20 sessions").closest("tr") as HTMLElement;
+    expect(within(all).getByText("8,000")).toBeTruthy();
+    expect(within(all).getByText("+3.1%")).toBeTruthy();
+  });
+
+  it("says when a high filing has no base rate yet, and shows none for a low filing", async () => {
+    renderAt(purchase.accession_no, { ...purchase, base_rates: [] });
+    expect(await screen.findByText(/No base rate yet/)).toBeTruthy();
+    cleanup();
+
+    renderAt(purchase.accession_no, { ...purchase, materiality: "low", base_rates: [] });
+    expect(await screen.findByRole("heading", { name: "AMZN · Form 4" })).toBeTruthy();
+    expect(screen.queryByText("What followed similar filings")).toBeNull();
   });
 
   it("labels Form 4 codes from SEC's list", () => {
