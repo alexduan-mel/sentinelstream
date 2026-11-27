@@ -24,6 +24,7 @@ side.
 from __future__ import annotations
 
 import logging
+import re
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, date, datetime
@@ -34,7 +35,7 @@ from psycopg2.extensions import connection as Connection
 from ingestion.market_calendar import NEW_YORK
 from orchestration.task_runs import RunResult, TaskRun
 from research.asof import AsOf, MarketBar
-from research.events import Event, insider_purchase_events
+from research.events import Event, eight_k_events, insider_purchase_events
 from research.returns import abdi_ranaldo_spread, entry_index, hold, median_traded_value
 from research.stats import summarise
 
@@ -283,13 +284,15 @@ def _apply(result, prepared, series, splits, sessions, benchmark, benchmark_spli
         )
 
 
-EVENT_KINDS = ("insider_purchases",)
+EVENT_KINDS = ("insider_purchases", "8k_items")
+_ITEM = re.compile(r"^[1-9]\.[0-9]{2}$")
 
 
 def compute_base_rates(run: TaskRun, conn: Connection, *, now: datetime | None = None) -> RunResult:
     """Task handler: run the calculator for one kind of event and record the report in the run's meta.
 
-    Payload: ``{"event": "insider_purchases", "exclude_10b5_1": false}``. With an ``as_of_date`` the
+    Payload: ``{"event": "insider_purchases", "exclude_10b5_1": false}`` or
+    ``{"event": "8k_items", "items": ["2.02"]}``. With an ``as_of_date`` the
     calculation is dated the start of that day in New York, as if run that morning.
     """
     kind = run.payload.get("event", "insider_purchases")
@@ -300,7 +303,13 @@ def compute_base_rates(run: TaskRun, conn: Connection, *, now: datetime | None =
     else:
         as_of = now or datetime.now(UTC)
     reader = AsOf(conn, as_of)
-    events = insider_purchase_events(reader, exclude_10b5_1=bool(run.payload.get("exclude_10b5_1", False)))
+    if kind == "8k_items":
+        items = run.payload.get("items")
+        if not isinstance(items, list) or not items or not all(isinstance(i, str) and _ITEM.match(i) for i in items):
+            raise ValueError(f'8k_items needs items like ["2.02"], got {items!r}')
+        events = eight_k_events(reader, items)
+    else:
+        events = insider_purchase_events(reader, exclude_10b5_1=bool(run.payload.get("exclude_10b5_1", False)))
     report = evaluate(reader, events)
     conn.commit()
     LOGGER.info(
@@ -310,4 +319,7 @@ def compute_base_rates(run: TaskRun, conn: Connection, *, now: datetime | None =
         report["events"],
         report["matched_to_prices"],
     )
-    return RunResult(status="succeeded", fetched_count=report["events"], meta={"event": kind, "report": report})
+    options = {"items": run.payload.get("items")} if kind == "8k_items" else {}
+    return RunResult(
+        status="succeeded", fetched_count=report["events"], meta={"event": kind, **options, "report": report}
+    )
