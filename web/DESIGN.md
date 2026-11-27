@@ -111,7 +111,13 @@ Opened by clicking a row on Alerts (the "SEC ↗" link still opens EDGAR). The A
 
 ### Glossary (`/glossary`)
 
-The text of `docs/glossary.md`, the one source for both GitHub and the app: plain-language meanings of every term the app uses, grouped as SEC and filings, Alerts, Prices and markets, Research, and The app. A search box narrows the list to terms whose name or explanation contains every word typed. Each term has an anchor (`/glossary#cik`), so other pages can link to it. The file may only use the Markdown the page renders (headings, paragraphs, bold, code); a test fails otherwise.
+The text of `docs/glossary.md`, the one source for both GitHub and the app: plain-language meanings of every term the app uses, grouped as SEC and filings, Alerts, Prices and markets, Research, and The app.
+
+- **Two columns.** On the left, a topic list (200px) that stays in view while the page scrolls: each topic with its term count, the one being read marked with the accent rule; clicking jumps to it. On the right, the terms as dictionary rows separated by 1px rules: the term in bold, with what an abbreviation stands for in muted 12px text under it, in a 200px column; then the meaning, a muted **Example:** line, and **See also:** links to related terms.
+- **Search** above both columns narrows them to terms whose name, expansion, meaning or example contains every word typed, and says "3 of 62 terms". Following a See also link clears the search, so the term it names is there.
+- Each term and topic has an anchor (`/glossary#cik`, `/glossary#research`), so other pages can link to it.
+- The file may only use the Markdown the page renders: headings, paragraphs, bold and code. Under a term, paragraphs starting `**Short for:**`, `**Example:**` and `**See also:**` (names separated by semicolons) become those fields. A test fails on anything else, or on a See also that names no term.
+- No cards, category labels, telemetry or keyboard shortcuts.
 
 ### Ticker deep dive (M3)
 
