@@ -41,7 +41,8 @@ const insiderBaseRate: BaseRate = {
   event_key: "",
   label: "Insider open-market purchase",
   scope: "market",
-  scope_label: "All US-listed companies (fewer than 30 in its industry, so pooled)",
+  scope_label:
+    "Based on past filings from all US-listed companies (fewer than 30 in this company's industry, so pooled)",
   as_of: "2026-11-27T11:00:00Z",
   variants: {
     main: {
@@ -178,7 +179,7 @@ describe("AlertDetailPage", () => {
     expect(await screen.findByText("What followed similar filings")).toBeTruthy();
     expect(screen.getByText("Insider open-market purchase")).toBeTruthy();
     expect(
-      screen.getByText(/All US-listed companies \(fewer than 30 in its industry, so pooled\)/)
+      screen.getByText(/Based on past filings from all US-listed companies \(fewer than 30/)
     ).toBeTruthy();
     const twenty = screen.getByText("20 sessions").closest("tr") as HTMLElement;
     expect(within(twenty).getByText("1,977")).toBeTruthy();
@@ -192,6 +193,7 @@ describe("AlertDetailPage", () => {
     // Too few months for a range: a dash, explained on hover.
     const sixty = screen.getByText("60 sessions").closest("tr") as HTMLElement;
     expect(within(sixty).queryByText(/to/)).toBeNull();
+    expect(screen.getByText(/market's own moves are taken out/)).toBeTruthy();
     expect(screen.getByText(/not a forecast/)).toBeTruthy();
 
     fireEvent.click(screen.getByText("All stocks"));

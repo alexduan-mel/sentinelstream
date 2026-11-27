@@ -120,8 +120,9 @@ def test_an_alert_uses_its_industry_when_it_has_enough_events_otherwise_the_mark
 
     [pooled] = base_rates_for(conn, form_type="8-K", items=["2.02", "9.01"], cik=NVDA_CIK)
     assert (pooled.scope, pooled.headline()["n"], pooled.headline()["mean"]) == ("market", 4000, 0.002)
-    assert (
-        pooled.scope_label == f"All US-listed companies (fewer than {MIN_INDUSTRY_EVENTS} in its industry, so pooled)"
+    assert pooled.scope_label == (
+        "Based on past filings from all US-listed companies "
+        f"(fewer than {MIN_INDUSTRY_EVENTS} in this company's industry, so pooled)"
     )
     assert pooled.variants["none"]["20"] is None  # only main rows stored here
     assert pooled.as_of == AS_OF
@@ -131,13 +132,16 @@ def test_an_alert_uses_its_industry_when_it_has_enough_events_otherwise_the_mark
     conn.commit()
     [industry] = base_rates_for(conn, form_type="8-K", items=["2.02"], cik=NVDA_CIK)
     assert (industry.scope, industry.headline()["mean"]) == ("industry", 0.03)
-    assert industry.scope_label == "Same broad industry: SIC group 36, which includes Semiconductors & Related Devices"
+    assert industry.scope_label == (
+        "Based on past filings from companies in the same broad industry "
+        "(SIC group 36, which includes Semiconductors & Related Devices)"
+    )
 
     assert base_rates_for(conn, form_type="8-K", items=["5.02"], cik=NVDA_CIK) == []  # none stored
     assert base_rates_for(conn, form_type="4", items=[], cik="0000999999") == []
     _rate(conn, "insider_purchase", "", "market", 900)
     [unknown_industry] = base_rates_for(conn, form_type="4", items=[], cik="0000999999")
-    assert unknown_industry.scope_label == "All US-listed companies"
+    assert unknown_industry.scope_label == "Based on past filings from all US-listed companies"
 
 
 # --- the API ---------------------------------------------------------------------------------------
