@@ -60,6 +60,15 @@ def test_list_tasks_shows_seeded_definitions(signed_in_client) -> None:
     tasks = [task for task in tasks if task["task_id"] not in due_now]
     assert tasks == [
         {
+            "task_id": "compute_base_rates",
+            "label": "Compute base rates",
+            "schedule_label": "On demand",  # manual: its schedule columns are placeholders
+            "trigger_mode": "manual",
+            "enabled": True,
+            "next_run_at": None,
+            "last_run": None,
+        },
+        {
             "task_id": "ingest_prices",
             "label": "Ingest daily price bars",
             "schedule_label": "Weekdays 18:30 ET",
