@@ -149,7 +149,7 @@ Infrastructure, and how to reach the host and the UI over SSM, is in [`infra/ter
 | `orchestration/` | Scheduler, task runs, locks, dispatch, migrations |
 | `alerts/` | Materiality rules, classification, the Slack notifier and its outbox |
 | `filings/` | 8-K item titles, Form 4 XML, XBRL company facts, EDGAR links |
-| `research/` | Point-in-time (as-of) data access for the base-rate calculator (M2) |
+| `research/` | Point-in-time (as-of) data access, the base-rate calculator and the insider-buying study (M2; write-up in `docs/research/`) |
 | `ledger/` | Decision ledger (M4) |
 | `api/` | FastAPI app; also serves the built web UI |
 | `web/` | React + TypeScript frontend |
