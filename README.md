@@ -77,8 +77,8 @@ Other decisions are recorded in [`docs/decisions/`](docs/decisions).
 | **M0** Showcase repo on AWS | Done, Nov 2026 | CI with gitleaks, Terraform for stage 1, auto-deploy to EC2 on merge, scheduler and worker, SEC filings and daily price ingestion, sign-in, the Tasks page, and a read-only Alerts list of stored filings |
 | **M1** Alerts live | Built; waiting on a live 8-K | Materiality rules v0 (8-K items 1.01, 2.02, 4.02, 5.02 and Form 4 open-market purchases), Slack alerts deduplicated by accession number, ticker onboarding with the Watchlist page, materiality and Slack delivery on the Alerts page, an Alert detail page with acceptance-to-Slack timing, and the `task_run_failed` alarm. The last check, a real watchlist 8-K reaching Slack within 10 minutes of EDGAR acceptance, waits for one to be filed |
 | **M2** Evidence harness | Done, Nov 2026 | As-of data access with tests proving lookahead is blocked, event studies with costs, a base rate (with sample size) on every high alert, and the insider-buying study |
-| **M3** Explain | In progress | XBRL fundamentals and a year-over-year 10-K diff with citations to filing sections |
-| **M4** Journal | Planned | Decision ledger, and returns against QQQ split into alpha and beta |
+| **M3** Explain | Done | XBRL fundamentals and a year-over-year 10-K diff with citations to filing sections |
+| **M4** Journal | In progress | Decision ledger, and returns against QQQ split into alpha and beta |
 | AWS stage 2 | Optional | RDS, ECS Fargate, S3 and CloudFront |
 
 **Out of scope:** trade execution and broker connections; buy or sell recommendations; options, intraday data and order books; charting, screeners and a general fundamentals UI; and multi-user SaaS. Broker apps and TradingView already cover those well.

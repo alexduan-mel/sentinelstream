@@ -4,19 +4,22 @@ SentinelStream (SS) is a personal research assistant for a long-horizon US stock
 
 Read `docs/PRD.md` for the full product spec and milestones. This file is the working agreement for anyone (human or agent) writing code here.
 
-## Current milestone: M3, explain (11 – 24 Jan 2027, started early on 28 Nov 2026)
+## Current milestone: M4, journal (25 – 31 Jan 2027, started early on 28 Nov 2026)
 
-M3 explains a company from its own filings: key financials straight from XBRL, and what changed in the 10-K since last year, with every claim cited to a filing section. It is done when every box is ticked:
+M4 keeps an honest record of the owner's own decisions and measures each one against QQQ. A decision is a Journal entry: what was done (Opened, Added, Trimmed, Closed, or Pass for "looked, chose not to act"), when, and the thesis behind it, often logged from an alert. A real trade can also give its day, price per share (checked against that day's low–high range) and share count. Two views come out: the **record of calls**, where every entry counts once whatever its size, and a **my money** view from the share counts, complete only when every trade is logged. It is done when every box is ticked:
 
-- [x] Key financials from XBRL: revenue, gross margin, operating income, net income, diluted EPS, cash, total debt, shares outstanding and free cash flow, by quarter and fiscal year; each company's tags mapped to one line item; every value linked to the filings it came from (ADR 0020)
-- [x] XBRL facts kept current: a watchlist company's new 10-Q, 10-K or 20-F reaches `xbrl_facts` without re-onboarding (ADR 0021)
-- [x] Ticker page: key financials for the last 8 quarters, with a fiscal-year toggle, each number linked to its filing
-- [x] 10-K sections extracted for domestic filers: risk factors (Item 1A) and MD&A (Item 7), split into paragraphs, from the filing as accepted (ADR 0022)
-- [x] Year-over-year 10-K diff: paragraphs added, removed and changed, stored with citations (accession number, section, paragraph) (ADR 0023)
-- [x] 10-K changes on the ticker page, each linked to its section in the filing
-- [x] Stretch: short LLM summaries of the changes, schema-validated, any claim without a citation rejected (ground rule 6) (ADR 0024)
+- [ ] Decision ledger: log an entry for a watchlist ticker with its action and thesis, optionally the alert it came from, and for a real trade its day, price and shares; the logging time is the server's, never typed in; entries are never edited, only corrected or withdrawn by a later row that keeps the original visible (ADR 0025)
+- [ ] Journal page listing every entry with its thesis, source alert and corrections, and "Log a decision" on Alert detail
+- [ ] Each entry scored from its trade price, or without one from the first daily close after it was logged, never a price already known then (tests prove it): the stock's return, QQQ's over the same days and SPY's for reference. An Opened position runs until its Closed entry; every other entry until today
+- [ ] Alpha and beta for each entry, from a regression of its daily returns on QQQ's since entry ("too early" under 20 trading days), and for all entries together
+- [ ] Scores kept current: a scheduled task updates them once each day's bars arrive
+- [ ] Journal page shows each entry's return against QQQ, its alpha and beta, the record of calls and the my-money view, in plain words and with no buy or sell language (ground rule 7)
 
-NBIS files 20-F, not 10-K: it gets key financials (fiscal years only), and its text diff comes later. Next milestone after M3 is **M4: Journal** (see `docs/PRD.md`).
+Next after M4 is the optional **AWS stage 2** (see `docs/PRD.md`).
+
+### M3, explain: done
+
+All seven boxes were ticked on 28 Nov 2026: key financials from XBRL (ADR 0020), XBRL facts kept current (ADR 0021), the ticker page, 10-K sections (ADR 0022), the year-over-year 10-K diff (ADR 0023), 10-K changes on the ticker page, and cited change summaries by Claude (ADR 0024). NBIS files 20-F, not 10-K: it gets key financials (fiscal years only), and its text diff comes later.
 
 ### M2, evidence harness: done
 
