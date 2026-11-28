@@ -181,6 +181,10 @@ class XbrlFact:
     form: str | None
     filed_date: date
     known_at: datetime
+    # The reporting filing's own fiscal year and period ("Q1".."Q3", "FY"), not the value's: a 10-Q
+    # labels last year's comparative figures with this year's fiscal year.
+    fiscal_year: int | None = None
+    fiscal_period: str | None = None
 
 
 class AsOf:
@@ -423,35 +427,31 @@ class AsOf:
             cursor.execute("SELECT cik, sic FROM market_issuers WHERE sic IS NOT NULL")
             return dict(cursor.fetchall())
 
-    def xbrl_facts(self, cik: str, concept: str, *, unit: str | None = None) -> list[XbrlFact]:
-        """Every value filed for ``concept`` before ``as_of``, restated ones included, oldest first."""
-        where = ["x.cik = %(cik)s", "x.concept = %(concept)s"]
-        params: dict[str, Any] = {"cik": cik, "concept": concept}
+    def xbrl_facts(self, cik: str, *concepts: str, unit: str | None = None) -> list[XbrlFact]:
+        """Every value filed for the ``concepts`` before ``as_of``, restated ones included, oldest first."""
+        if not concepts:
+            raise ValueError("name at least one concept")
+        where = ["x.cik = %(cik)s", "x.concept = ANY(%(concepts)s)"]
+        params: dict[str, Any] = {"cik": cik, "concepts": list(concepts)}
         if unit is not None:
             where.append("x.unit = %(unit)s")
             params["unit"] = unit
         rows = self._select(
             "SELECT x.cik, x.taxonomy, x.concept, x.unit, x.period_start, x.period_end, x.value, x.accession_no, "
-            "x.form, x.filed_date, x.known_at FROM xbrl_facts x",
+            "x.form, x.filed_date, x.known_at, x.fiscal_year, x.fiscal_period FROM xbrl_facts x",
             "x.known_at",
             where,
             params,
-            order_by="x.period_end, x.known_at, x.accession_no",
+            order_by="x.period_end, x.known_at, x.accession_no, x.concept",
         )
         return [XbrlFact(*row) for row in rows]
 
-    def latest_xbrl_values(self, cik: str, concept: str, *, unit: str | None = None) -> list[XbrlFact]:
-        """One value per period: the most recently filed one before ``as_of``, by period end.
+    def latest_xbrl_values(self, cik: str, *concepts: str, unit: str | None = None) -> list[XbrlFact]:
+        """One value per concept and period: the most recently filed one before ``as_of``, by period end.
 
         A later restatement replaces the earlier value only once the restating filing is public.
         """
-        latest: dict[tuple[str, str, date | None, date], XbrlFact] = {}
-        for fact in self.xbrl_facts(cik, concept, unit=unit):
-            key = (fact.taxonomy, fact.unit, fact.period_start, fact.period_end)
-            held = latest.get(key)
-            if held is None or (fact.known_at, fact.accession_no) > (held.known_at, held.accession_no):
-                latest[key] = fact
-        return sorted(latest.values(), key=lambda f: (f.period_end, f.period_start or date.min, f.unit))
+        return latest_per_period(self.xbrl_facts(cik, *concepts, unit=unit))
 
     def _select(
         self, source: str, known_at_column: str, where: list[str], params: dict[str, Any], *, order_by: str
@@ -462,3 +462,14 @@ class AsOf:
         with self._conn.cursor() as cursor:
             cursor.execute(query, {**params, "as_of": self._as_of})
             return cursor.fetchall()
+
+
+def latest_per_period(facts: list[XbrlFact]) -> list[XbrlFact]:
+    """Keep the most recently known value for each concept, unit and period; sorted by period end."""
+    latest: dict[tuple[str, str, str, date | None, date], XbrlFact] = {}
+    for fact in facts:
+        key = (fact.taxonomy, fact.concept, fact.unit, fact.period_start, fact.period_end)
+        held = latest.get(key)
+        if held is None or (fact.known_at, fact.accession_no) > (held.known_at, held.accession_no):
+            latest[key] = fact
+    return sorted(latest.values(), key=lambda f: (f.period_end, f.period_start or date.min, f.concept, f.unit))
