@@ -1,19 +1,24 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useMatch, useNavigate, useSearchParams } from "react-router-dom";
 import dayjs from "dayjs";
 import {
+  Alert,
+  Button,
   DatePicker,
   Segmented,
   Select,
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   type TableColumnsType
 } from "antd";
+import { CloseOutlined, LeftOutlined, ReloadOutlined, RightOutlined } from "@ant-design/icons";
 
 import { errorMessage } from "../api/client";
 import {
+  formLabel,
   getFilingFacets,
   itemLabel,
   listFilings,
@@ -31,7 +36,8 @@ import { MaterialityTag, Pushed } from "../components/AlertCells";
 import { LoadError } from "../components/LoadError";
 import { PageTitle } from "../components/PageTitle";
 import { EMPTY, Timestamp } from "../components/Timestamp";
-import { zoneLabel } from "../lib/time";
+import { AlertDetail, clearDetailCache } from "./AlertDetail";
+import { formatRelative, formatTime, zoneLabel } from "../lib/time";
 import { useTimeZone } from "../lib/timeZone";
 
 export const FILINGS_PAGE_SIZE = 50;
@@ -130,28 +136,92 @@ const columns: TableColumnsType<Filing> = [
   }
 ];
 
-/** Where the list was, so returning from a filing lands on the same filtered view and position. */
-const RETURN_KEY = "alerts-return";
-
-function rememberPosition(search: string) {
-  try {
-    sessionStorage.setItem(RETURN_KEY, JSON.stringify({ search, y: window.scrollY }));
-  } catch {
-    // Storage can be unavailable (private windows); returning then starts at the top.
-  }
-}
-
 function DetailsLink({ accessionNo }: { accessionNo: string }) {
   const { search } = useLocation();
   return (
     <Link
-      to={`/alerts/${accessionNo}`}
-      state={{ fromSearch: search }}
-      onClick={() => rememberPosition(search)}
+      to={`/alerts/${accessionNo}${search}`}
+      state={{ fromList: true }}
       aria-label={`Details of ${accessionNo}`}
     >
       Details
     </Link>
+  );
+}
+
+/** Lists already loaded this session, by query: going back to one shows it at once, as it was. It
+ *  is reloaded only by Refresh (or "Show" on the new-filings notice), never on its own. */
+type CachedPage = { data: FilingPage; at: number };
+const listCache = new Map<string, CachedPage>();
+
+export function clearListCache(): void {
+  listCache.clear();
+}
+
+/** Below this width the reading pane takes the whole screen instead of sitting beside the list. */
+const NARROW_PX = 768;
+
+function useNarrow(): boolean {
+  const [narrow, setNarrow] = useState(() => window.innerWidth < NARROW_PX);
+  useEffect(() => {
+    const onResize = () => setNarrow(window.innerWidth < NARROW_PX);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return narrow;
+}
+
+/** Arrow keys and Esc belong to whatever is being typed in, not to the list. */
+function typingIn(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
+    target.closest("[role=combobox], [role=listbox], .ant-picker-dropdown") !== null
+  );
+}
+
+/** One row of the narrow list beside the reading pane: ticker and form, then when, High marked. */
+function CompactRow({
+  filing,
+  selected,
+  onOpen
+}: {
+  filing: Filing;
+  selected: boolean;
+  onOpen: () => void;
+}) {
+  const { zone } = useTimeZone();
+  const ref = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (selected) ref.current?.scrollIntoView?.({ block: "nearest" });
+  }, [selected]);
+  const who = filing.tickers.join(", ") || `CIK ${filing.cik}`;
+  return (
+    <button
+      ref={ref}
+      type="button"
+      onClick={onOpen}
+      aria-current={selected ? "true" : undefined}
+      aria-label={`${who} ${filing.form_type}, accepted ${formatTime(filing.accepted_at, undefined, zone).text}`}
+      className={`block w-full cursor-pointer border-0 border-b border-l-2 border-solid border-b-border-default px-8 py-6 text-left ${
+        selected
+          ? "border-l-semantic-info bg-bg-elevated"
+          : "border-l-transparent bg-transparent hover:bg-bg-elevated"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-4">
+        <span className="truncate font-medium text-text-primary">{`${who} · ${formLabel(filing.form_type)}`}</span>
+        {filing.materiality === "high" && (
+          <span className="text-semantic-warning text-secondary" aria-label="High">
+            High
+          </span>
+        )}
+      </div>
+      <div className="text-secondary text-text-muted">
+        {formatTime(filing.accepted_at, undefined, zone).text}
+      </div>
+    </button>
   );
 }
 
@@ -178,21 +248,30 @@ function readFilters(params: URLSearchParams): Filters {
   };
 }
 
-/** Every stored SEC filing, newest first, with its materiality and Slack delivery. */
+/**
+ * Every stored SEC filing, newest first, with its materiality and Slack delivery. Opening one slides
+ * its detail in beside a narrow list (``/alerts/:accession``); the list stays loaded underneath, so
+ * closing the detail is instant and keeps your place (DESIGN.md, Alerts).
+ */
 export function AlertsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
+  const openMatch = useMatch("/alerts/:accessionNo");
+  const openAccession = openMatch?.params.accessionNo ?? null;
+  const narrow = useNarrow();
   const search = params.toString();
   const { tickers, formTypes, range, materiality, page } = useMemo(
     () => readFilters(new URLSearchParams(search)),
     [search]
   );
-  const [filings, setFilings] = useState<Loadable<FilingPage>>({
+  const [filings, setFilings] = useState<Loadable<FilingPage> & { at: number | null }>({
     data: null,
     loading: true,
-    error: null
+    error: null,
+    at: null
   });
+  const [newCount, setNewCount] = useState(0);
   const [facets, setFacets] = useState<FilingFacets>({ tickers: [], form_types: [] });
   const [poller, setPoller] = useState<TaskDefinition | undefined>(undefined);
   const [now, setNow] = useState(() => new Date());
@@ -218,43 +297,52 @@ export function AlertsPage() {
     [setParams]
   );
 
-  const loadFilings = useCallback(async () => {
-    setFilings((current) => ({ ...current, loading: true, error: null }));
-    try {
-      const data = await listFilings({
-        tickers,
-        formTypes,
-        acceptedFrom: range?.[0],
-        acceptedTo: range?.[1],
-        materiality: materiality === "all" ? undefined : materiality,
-        timeZone,
-        limit: FILINGS_PAGE_SIZE,
-        offset: (page - 1) * FILINGS_PAGE_SIZE
-      });
-      setFilings({ data, loading: false, error: null });
-    } catch (error) {
-      setFilings((current) => ({ ...current, loading: false, error: errorMessage(error) }));
-    }
-  }, [tickers, formTypes, range, materiality, timeZone, page]);
+  const query = useMemo(
+    () => ({
+      tickers,
+      formTypes,
+      acceptedFrom: range?.[0],
+      acceptedTo: range?.[1],
+      materiality: materiality === "all" ? undefined : materiality,
+      timeZone,
+      limit: FILINGS_PAGE_SIZE,
+      offset: (page - 1) * FILINGS_PAGE_SIZE
+    }),
+    [tickers, formTypes, range, materiality, timeZone, page]
+  );
+  const cacheKey = useMemo(() => JSON.stringify(query), [query]);
+
+  const loadFilings = useCallback(
+    async (force = false) => {
+      const cached = force ? undefined : listCache.get(cacheKey);
+      if (cached) {
+        setFilings({ data: cached.data, loading: false, error: null, at: cached.at });
+        return;
+      }
+      setFilings((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const data = await listFilings(query);
+        const at = Date.now();
+        listCache.set(cacheKey, { data, at });
+        setFilings({ data, loading: false, error: null, at });
+        setNewCount(0);
+      } catch (error) {
+        setFilings((current) => ({ ...current, loading: false, error: errorMessage(error) }));
+      }
+    },
+    [cacheKey, query]
+  );
 
   useEffect(() => {
     void loadFilings();
   }, [loadFilings]);
 
-  // Back from a filing: once its page of results is shown, scroll to where the list was.
-  useEffect(() => {
-    if (filings.loading || !filings.data) return;
-    try {
-      const saved = JSON.parse(sessionStorage.getItem(RETURN_KEY) ?? "null") as {
-        search: string;
-        y: number;
-      } | null;
-      if (saved && saved.search === location.search) window.scrollTo(0, saved.y);
-      sessionStorage.removeItem(RETURN_KEY);
-    } catch {
-      // Unreadable or unavailable storage: stay at the top.
-    }
-  }, [filings.loading, filings.data, location.search]);
+  const refresh = useCallback(() => {
+    // A refresh also forgets loaded details: their Slack delivery may have moved on.
+    listCache.clear();
+    clearDetailCache();
+    void loadFilings(true);
+  }, [loadFilings]);
 
   // Filter options are a convenience: if they fail to load, the list still works unfiltered.
   useEffect(() => {
@@ -263,11 +351,15 @@ export function AlertsPage() {
       .catch(() => undefined);
   }, []);
 
-  // The poll line, re-read every minute so "last ran" and "next in" stay current. If the schedule
-  // cannot be read the line is left out rather than guessed.
+  // Every minute: re-read the poller's schedule for the poll line, and check quietly whether newer
+  // filings match the filters. The list itself never changes until Refresh or "Show".
+  const loadedTotal = useRef<number | null>(null);
+  loadedTotal.current = filings.data?.total ?? null;
+  const queryRef = useRef(query);
+  queryRef.current = query;
   useEffect(() => {
     let cancelled = false;
-    const refresh = () => {
+    const tick = () => {
       listTasks()
         .then((tasks) => {
           if (cancelled) return;
@@ -276,23 +368,188 @@ export function AlertsPage() {
         })
         .catch(() => undefined);
     };
-    refresh();
-    const timer = setInterval(refresh, POLL_LINE_REFRESH_MS);
+    const check = () => {
+      if (document.visibilityState === "hidden" || loadedTotal.current === null) return;
+      listFilings({ ...queryRef.current, limit: 1, offset: 0 })
+        .then((latest) => {
+          if (cancelled || loadedTotal.current === null) return;
+          setNewCount(Math.max(0, latest.total - loadedTotal.current));
+        })
+        .catch(() => undefined);
+    };
+    tick();
+    const timer = setInterval(() => {
+      tick();
+      check();
+    }, POLL_LINE_REFRESH_MS);
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
   }, []);
 
+  const items = useMemo(() => filings.data?.items ?? [], [filings.data]);
+  const total = filings.data?.total ?? 0;
+  const lastPage = Math.max(1, Math.ceil(total / FILINGS_PAGE_SIZE));
+  const index = openAccession ? items.findIndex((f) => f.accession_no === openAccession) : -1;
+
+  // Open, step and close. Opening adds one history entry; stepping replaces it, so Back closes the
+  // pane rather than walking through every alert looked at.
+  const listScroll = useRef(0);
+  const open = useCallback(
+    (accession: string) => {
+      if (!openAccession) listScroll.current = window.scrollY;
+      navigate(`/alerts/${accession}${location.search}`, {
+        replace: openAccession !== null,
+        state: openAccession ? location.state : { fromList: true }
+      });
+    },
+    [navigate, location.search, location.state, openAccession]
+  );
+  const close = useCallback(() => {
+    if ((location.state as { fromList?: boolean } | null)?.fromList) navigate(-1);
+    else navigate(`/${location.search}`, { replace: true });
+  }, [navigate, location.search, location.state]);
+
+  // Back on the full list, return to where it was scrolled.
+  const wasOpen = useRef(openAccession !== null);
+  useLayoutEffect(() => {
+    if (wasOpen.current && !openAccession) window.scrollTo(0, listScroll.current);
+    if (!wasOpen.current && openAccession) window.scrollTo(0, 0);
+    wasOpen.current = openAccession !== null;
+  }, [openAccession]);
+
+  // Stepping past either end of a page loads the next or previous page, then opens its first or
+  // last filing.
+  const pending = useRef<"first" | "last" | null>(null);
+  useEffect(() => {
+    if (!pending.current || filings.loading || items.length === 0 || !openAccession) return;
+    const target = pending.current === "first" ? items[0] : items[items.length - 1];
+    pending.current = null;
+    open(target.accession_no);
+  }, [items, filings.loading, openAccession, open]);
+
+  const canNewer = index > 0 || (index === 0 && page > 1);
+  const canOlder = index >= 0 ? index < items.length - 1 || page < lastPage : items.length > 0;
+  const step = useCallback(
+    (direction: 1 | -1) => {
+      if (index < 0) {
+        if (direction === 1 && items.length > 0) open(items[0].accession_no);
+        return;
+      }
+      const target = index + direction;
+      if (target >= 0 && target < items.length) open(items[target].accession_no);
+      else if (direction === 1 && page < lastPage) {
+        pending.current = "first";
+        setFilter("page", String(page + 1));
+      } else if (direction === -1 && page > 1) {
+        pending.current = "last";
+        setFilter("page", page - 1 > 1 ? String(page - 1) : null);
+      }
+    },
+    [index, items, open, page, lastPage, setFilter]
+  );
+
+  useEffect(() => {
+    if (!openAccession) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || typingIn(event.target)) return;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        step(event.key === "ArrowDown" ? 1 : -1);
+      } else if (event.key === "Escape") {
+        close();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openAccession, step, close]);
+
   const filtered =
     tickers.length > 0 || formTypes.length > 0 || range !== null || materiality !== "all";
   const poll = pollLine(poller, now);
   const zone = zoneLabel(now, timeZone);
+  const updated =
+    filings.at === null ? null : `Updated ${formatRelative(new Date(filings.at), now)}`;
 
-  return (
-    <Space orientation="vertical" size={16} className="w-full">
-      <PageTitle title="Alerts" count={filings.data?.total} />
+  const freshness = (
+    <Space size={12} wrap>
+      {poll && <Muted>{poll}</Muted>}
+      {updated && <Muted>{updated.replace("<1m ago", "just now")}</Muted>}
+      <Button
+        size="small"
+        icon={<ReloadOutlined />}
+        loading={filings.loading && filings.data !== null}
+        onClick={refresh}
+      >
+        Refresh
+      </Button>
+    </Space>
+  );
 
+  const notice =
+    newCount > 0 ? (
+      <Alert
+        type="info"
+        title={`${newCount} new ${newCount === 1 ? "filing" : "filings"} since this list was loaded`}
+        action={
+          <Button
+            size="small"
+            onClick={() => {
+              if (page > 1) setFilter("page", null);
+              refresh();
+            }}
+          >
+            Show
+          </Button>
+        }
+      />
+    ) : null;
+
+  const toolbar = (
+    <Space size={4} align="center">
+      <Typography.Text type="secondary" className="!text-secondary hidden lg:inline">
+        ↑ ↓ to move · Esc to close
+      </Typography.Text>
+      <Tooltip title="Newer (↑)" mouseEnterDelay={0.3}>
+        <Button
+          size="small"
+          icon={<LeftOutlined />}
+          aria-label="Newer filing"
+          disabled={!canNewer}
+          onClick={() => step(-1)}
+        >
+          Newer
+        </Button>
+      </Tooltip>
+      <Tooltip title="Older (↓)" mouseEnterDelay={0.3}>
+        <Button size="small" aria-label="Older filing" disabled={!canOlder} onClick={() => step(1)}>
+          Older <RightOutlined />
+        </Button>
+      </Tooltip>
+      <Tooltip title="Close (Esc)" mouseEnterDelay={0.3}>
+        <Button
+          size="small"
+          type="text"
+          icon={<CloseOutlined />}
+          aria-label="Close"
+          onClick={close}
+        />
+      </Tooltip>
+    </Space>
+  );
+
+  const filterSummary = [
+    tickers.join(", "),
+    materiality !== "all" ? (materiality === "high" ? "High" : "Low") : "",
+    formTypes.join(", "),
+    range ? `${range[0] || "…"} to ${range[1] || "…"}` : ""
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  const fullList = (
+    <Space orientation="vertical" size={16} className={`w-full ${openAccession ? "!hidden" : ""}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Space size={8} wrap>
           <Select<string[]>
@@ -348,11 +605,12 @@ export function AlertsPage() {
             }}
           />
         </Space>
-        {poll && <Muted>{poll}</Muted>}
       </div>
 
+      {notice}
+
       {filings.error ? (
-        <LoadError message={filings.error} onRetry={() => void loadFilings()} />
+        <LoadError message={filings.error} onRetry={() => void loadFilings(true)} />
       ) : (
         <Table<Filing>
           rowKey="accession_no"
@@ -361,21 +619,18 @@ export function AlertsPage() {
             onClick: () => {
               // Selecting text in a row (to copy a reason, say) is not a request to open it.
               if (window.getSelection()?.toString()) return;
-              rememberPosition(location.search);
-              navigate(`/alerts/${filing.accession_no}`, {
-                state: { fromSearch: location.search }
-              });
+              open(filing.accession_no);
             }
           })}
           size="small"
           tableLayout="fixed"
           columns={columns}
-          dataSource={filings.data?.items ?? []}
-          loading={filings.loading}
+          dataSource={items}
+          loading={filings.loading && filings.data === null}
           pagination={{
             current: page,
             pageSize: FILINGS_PAGE_SIZE,
-            total: filings.data?.total ?? 0,
+            total,
             showSizeChanger: false,
             onChange: (next) => setFilter("page", next > 1 ? String(next) : null)
           }}
@@ -385,6 +640,69 @@ export function AlertsPage() {
             )
           }}
         />
+      )}
+    </Space>
+  );
+
+  const detail = openAccession ? (
+    <AlertDetail key={openAccession} accessionNo={openAccession} toolbar={toolbar} />
+  ) : null;
+
+  return (
+    <Space orientation="vertical" size={16} className="w-full">
+      <div className="flex flex-wrap items-center justify-between gap-8">
+        <PageTitle title="Alerts" count={filings.data?.total} />
+        {freshness}
+      </div>
+
+      {fullList}
+
+      {openAccession && narrow && (
+        <section aria-label="Alert detail" className="sentinel-slide-in">
+          <div className="mb-12">
+            <Typography.Link onClick={close}>← Alerts</Typography.Link>
+          </div>
+          {detail}
+        </section>
+      )}
+
+      {openAccession && !narrow && (
+        // Fills the window under the top bar (48px) and the page's padding, so the list and the
+        // detail scroll on their own.
+        <div className="flex flex-col gap-8" style={{ height: "calc(100vh - 140px)" }}>
+          {(filterSummary || notice) && (
+            <div className="flex flex-wrap items-center gap-12">
+              {filterSummary && <Muted>{`Filtered: ${filterSummary}`}</Muted>}
+              {notice}
+            </div>
+          )}
+          <div className="flex min-h-0 flex-1 border-0 border-t border-solid border-border-default">
+            <nav
+              aria-label="Alerts list"
+              className="w-[220px] shrink-0 overflow-y-auto border-0 border-r border-solid border-border-default"
+            >
+              {items.map((filing) => (
+                <CompactRow
+                  key={filing.accession_no}
+                  filing={filing}
+                  selected={filing.accession_no === openAccession}
+                  onOpen={() => open(filing.accession_no)}
+                />
+              ))}
+              {total > 0 && (
+                <div className="px-8 py-8 text-secondary text-text-muted">
+                  {`${(page - 1) * FILINGS_PAGE_SIZE + 1}–${(page - 1) * FILINGS_PAGE_SIZE + items.length} of ${total.toLocaleString("en-US")}`}
+                </div>
+              )}
+            </nav>
+            <section
+              aria-label="Alert detail"
+              className="sentinel-slide-in min-w-0 flex-1 overflow-y-auto pl-24 pt-16"
+            >
+              {detail}
+            </section>
+          </div>
+        </div>
       )}
     </Space>
   );

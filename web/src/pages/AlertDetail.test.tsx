@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
@@ -10,12 +10,13 @@ import {
   type FilingDetail
 } from "../api/filings";
 import { installDomStubs } from "../test/dom";
-import { AlertDetailPage } from "./AlertDetailPage";
+import { AlertDetail, clearDetailCache } from "./AlertDetail";
 
 beforeAll(installDomStubs);
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  clearDetailCache();
 });
 
 function stats(n: number, mean: number, extra: Partial<BaseRateStats> = {}): BaseRateStats {
@@ -104,27 +105,18 @@ const purchase: FilingDetail = {
   base_rates: [insiderBaseRate]
 };
 
-function ListAddress() {
-  const { search } = useLocation();
-  return <div>alerts list{search}</div>;
-}
-
-function renderAt(accession: string, body: unknown, status = 200, fromSearch?: string) {
+function renderAt(accession: string, body: unknown, status = 200) {
   const fetchMock = vi.fn(async () => new Response(JSON.stringify(body), { status }));
   vi.stubGlobal("fetch", fetchMock);
-  const entry = { pathname: `/alerts/${accession}`, state: fromSearch ? { fromSearch } : null };
   render(
-    <MemoryRouter initialEntries={[entry]}>
-      <Routes>
-        <Route path="/" element={<ListAddress />} />
-        <Route path="/alerts/:accessionNo" element={<AlertDetailPage />} />
-      </Routes>
+    <MemoryRouter>
+      <AlertDetail accessionNo={accession} />
     </MemoryRouter>
   );
   return fetchMock;
 }
 
-describe("AlertDetailPage", () => {
+describe("AlertDetail", () => {
   it("shows what the filing is, how fast it was seen and pushed, and its Form 4 rows", async () => {
     const fetchMock = renderAt(purchase.accession_no, purchase);
 
@@ -175,12 +167,25 @@ describe("AlertDetailPage", () => {
     expect(screen.queryByText("Form 4 transactions")).toBeNull();
   });
 
-  it("shows a missing filing as an error with Retry and links back to Alerts", async () => {
+  it("shows a missing filing as an error with Retry", async () => {
     renderAt("0001045810-26-999999", { detail: "No stored filing 0001045810-26-999999" }, 404);
 
     expect(await screen.findByText("No stored filing 0001045810-26-999999")).toBeTruthy();
-    fireEvent.click(screen.getByRole("link", { name: "← Alerts" }));
-    await waitFor(() => expect(screen.getByText("alerts list")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("shows a filing already loaded at once, without asking the API again", async () => {
+    const fetchMock = renderAt(purchase.accession_no, purchase);
+    expect(await screen.findByRole("heading", { name: "AMZN · Form 4" })).toBeTruthy();
+    cleanup();
+
+    render(
+      <MemoryRouter>
+        <AlertDetail accessionNo={purchase.accession_no} />
+      </MemoryRouter>
+    );
+    expect(screen.getByRole("heading", { name: "AMZN · Form 4" })).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("shows what followed similar filings, with gains and losses coloured, for both filter settings", async () => {
@@ -216,17 +221,11 @@ describe("AlertDetailPage", () => {
     renderAt(purchase.accession_no, { ...purchase, base_rates: [] });
     expect(await screen.findByText(/No base rate yet/)).toBeTruthy();
     cleanup();
+    clearDetailCache();
 
     renderAt(purchase.accession_no, { ...purchase, materiality: "low", base_rates: [] });
     expect(await screen.findByRole("heading", { name: "AMZN · Form 4" })).toBeTruthy();
     expect(screen.queryByText("What followed similar filings")).toBeNull();
-  });
-
-  it("goes back to the filtered list it was opened from", async () => {
-    renderAt(purchase.accession_no, purchase, 200, "?materiality=high&ticker=AMZN");
-
-    fireEvent.click(await screen.findByRole("link", { name: "← Alerts" }));
-    expect(await screen.findByText("alerts list?materiality=high&ticker=AMZN")).toBeTruthy();
   });
 
   it("labels Form 4 codes from SEC's list", () => {

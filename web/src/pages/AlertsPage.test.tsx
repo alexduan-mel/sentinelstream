@@ -2,34 +2,43 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { filingsQuery, itemLabel, pollLine, purchaseLabel, type Filing } from "../api/filings";
+import {
+  filingsQuery,
+  itemLabel,
+  pollLine,
+  purchaseLabel,
+  type Filing,
+  type FilingDetail
+} from "../api/filings";
 import type { TaskDefinition } from "../api/tasks";
 import { activeNavKey } from "../components/TopBar";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import { installDomStubs } from "../test/dom";
-import { AlertsPage } from "./AlertsPage";
+import { clearDetailCache } from "./AlertDetail";
+import { AlertsPage, clearListCache } from "./AlertsPage";
 
-/** Shows the current address, and the list view a detail page was opened from. */
+/** Shows the current address. */
 function Where() {
   const location = useLocation();
-  const from = (location.state as { fromSearch?: string } | null)?.fromSearch;
   return (
     <div data-testid="where">
       {location.pathname}
       {location.search}
-      {from !== undefined ? ` from ${from || "(no filters)"}` : ""}
     </div>
   );
 }
 
-/** The page inside a router, with a stand-in detail route to show where a row click leads. */
+/** The page inside a router, set up as the app does: one page for the list and an open filing. */
 function renderPage(entry = "/") {
   return render(
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
-        <Route path="/" element={<AlertsPage />} />
-        <Route path="/alerts/:accessionNo" element={<div>detail page</div>} />
+        <Route element={<AlertsPage />}>
+          <Route path="/" element={null} />
+          <Route path="/alerts/:accessionNo" element={null} />
+        </Route>
+        <Route path="/elsewhere" element={<div>elsewhere</div>} />
       </Routes>
       <Where />
     </MemoryRouter>
@@ -40,6 +49,9 @@ beforeAll(installDomStubs);
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
+  clearListCache();
+  clearDetailCache();
 });
 
 const earnings: Filing = {
@@ -100,6 +112,22 @@ const poller: TaskDefinition = {
   last_run: { id: 9, status: "succeeded", created_at: "2026-11-26T21:58:00Z" }
 };
 
+function detailOf(filing: Filing): FilingDetail {
+  return {
+    ...filing,
+    report_date: null,
+    primary_document: null,
+    primary_document_url: null,
+    first_seen_at: filing.accepted_at,
+    detection_delay_seconds: null,
+    slack_attempts: null,
+    alert_latency_seconds: null,
+    issuers: [],
+    form4_transactions: [],
+    base_rates: []
+  };
+}
+
 function mockApi(
   page: { items: Filing[]; total: number } = { items: [form4, earnings], total: 2 }
 ) {
@@ -110,6 +138,11 @@ function mockApi(
       return json({ tickers: ["AMZN", "NVDA"], form_types: ["4", "8-K"] });
     if (url.startsWith("/api/filings?")) return json(page);
     if (url === "/api/tasks") return json([poller]);
+    const detail = url.match(/^\/api\/filings\/(.+)$/);
+    if (detail) {
+      const filing = page.items.find((f) => f.accession_no === decodeURIComponent(detail[1]));
+      if (filing) return json(detailOf(filing));
+    }
     return new Response("{}", { status: 404 });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -316,14 +349,126 @@ describe("AlertsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(screen.getByText("NVDA")).toBeTruthy());
   });
-  it("opens a filing from its Details link, remembering the filtered list it came from", async () => {
+  it("opens a filing beside a narrow list, keeping the filters in the address", async () => {
     mockApi();
     renderPage("/?materiality=high&ticker=NVDA");
 
     fireEvent.click(await screen.findByRole("link", { name: "Details of 0001045810-26-000001" }));
-    expect(await screen.findByText("detail page")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "NVDA · 8-K" })).toBeTruthy();
     expect(screen.getByTestId("where").textContent).toBe(
-      "/alerts/0001045810-26-000001 from ?materiality=high&ticker=NVDA"
+      "/alerts/0001045810-26-000001?materiality=high&ticker=NVDA"
+    );
+    const list = screen.getByRole("navigation", { name: "Alerts list" });
+    const current = within(list).getByRole("button", { current: true });
+    expect(current.textContent).toContain("NVDA · 8-K"); // formLabel keeps 8-K as is
+    expect(screen.getByText("Filtered: NVDA · High")).toBeTruthy();
+  });
+
+  it("closes with ×, Esc or Back, showing the list as it was without loading it again", async () => {
+    const fetchMock = mockApi();
+    renderPage();
+    const listCalls = () =>
+      fetchMock.mock.calls.filter(([input]) => String(input).startsWith("/api/filings?")).length;
+
+    fireEvent.click(await screen.findByText("NVDA"));
+    expect(await screen.findByRole("heading", { name: "NVDA · 8-K" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/"));
+    expect(screen.queryByRole("navigation", { name: "Alerts list" })).toBeNull();
+
+    fireEvent.click(screen.getByText("NVDA"));
+    await screen.findByRole("heading", { name: "NVDA · 8-K" });
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/"));
+    expect(listCalls()).toBe(1);
+  });
+
+  it("moves between filings with the arrow keys and Newer / Older, without adding history", async () => {
+    mockApi({ items: [form4, earnings, quarterly], total: 3 });
+    renderPage();
+
+    fireEvent.click((await screen.findAllByText("AMZN", { selector: "td" }))[0]);
+    expect(await screen.findByRole("heading", { name: "AMZN · Form 4" })).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "Newer filing" }) as HTMLButtonElement).disabled
+    ).toBe(true);
+
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(await screen.findByRole("heading", { name: "NVDA · 8-K" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Older filing" }));
+    expect(await screen.findByRole("heading", { name: "AMZN · 10-Q" })).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "Older filing" }) as HTMLButtonElement).disabled
+    ).toBe(true);
+    fireEvent.keyDown(window, { key: "ArrowUp" });
+    expect(await screen.findByRole("heading", { name: "NVDA · 8-K" })).toBeTruthy();
+
+    // Stepping replaced the address each time, so one Esc (Back) returns to the list.
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/"));
+  });
+
+  it("leaves the arrow keys alone while a filter is being typed in", async () => {
+    mockApi({ items: [form4, earnings], total: 2 });
+    renderPage();
+    fireEvent.click(await screen.findByText("AMZN", { selector: "td" }));
+    await screen.findByRole("heading", { name: "AMZN · Form 4" });
+
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(screen.getByRole("heading", { name: "AMZN · Form 4" })).toBeTruthy();
+    input.remove();
+  });
+
+  it("opens a link to a filing straight in the pane, and closing it shows the list", async () => {
+    mockApi();
+    renderPage("/alerts/0001045810-26-000001");
+
+    expect(await screen.findByRole("heading", { name: "NVDA · 8-K" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/"));
+    expect(await screen.findByText("AMZN", { selector: "td" })).toBeTruthy();
+  });
+
+  it("keeps a loaded list across visits and reloads it only on Refresh", async () => {
+    const fetchMock = mockApi();
+    const { unmount } = renderPage();
+    expect(await screen.findByText("Updated just now")).toBeTruthy();
+    unmount();
+
+    renderPage();
+    expect(screen.getByText("NVDA", { selector: "td" })).toBeTruthy(); // at once, from memory
+    const listCalls = () =>
+      fetchMock.mock.calls.filter(([input]) => String(input).startsWith("/api/filings?")).length;
+    expect(listCalls()).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /Refresh/ }));
+    await waitFor(() => expect(listCalls()).toBe(2));
+  });
+
+  it("says when newer filings match, and shows them only when asked", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let total = 2;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+      if (url === "/api/filings/facets") return json({ tickers: [], form_types: [] });
+      if (url === "/api/tasks") return json([poller]);
+      return json({ items: [form4, earnings], total });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage();
+    await screen.findByText("NVDA", { selector: "td" });
+
+    total = 5;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(await screen.findByText("3 new filings since this list was loaded")).toBeTruthy();
+    expect(screen.getByText("NVDA", { selector: "td" })).toBeTruthy(); // the table did not change
+
+    fireEvent.click(screen.getByRole("button", { name: "Show" }));
+    await waitFor(() =>
+      expect(screen.queryByText("3 new filings since this list was loaded")).toBeNull()
     );
   });
 
@@ -349,15 +494,15 @@ describe("AlertsPage", () => {
     await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/?ticker=NVDA"));
   });
 
-  it("opens a filing's detail page from its row, but not from its SEC link", async () => {
+  it("opens a filing from its row, but not from its SEC link", async () => {
     mockApi();
     renderPage();
 
     const link = await screen.findByRole("link", { name: /0001045810-26-000001 on SEC EDGAR/ });
     fireEvent.click(link);
-    expect(screen.queryByText("detail page")).toBeNull();
+    expect(screen.getByTestId("where").textContent).toBe("/");
 
     fireEvent.click(screen.getByText("NVDA"));
-    expect(await screen.findByText("detail page")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "NVDA · 8-K" })).toBeTruthy();
   });
 });
