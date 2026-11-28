@@ -20,6 +20,7 @@ from ingestion import (
     price_bars,
     sec_filings,
     splits,
+    tenk_sections,
     xbrl_refresh,
 )
 from orchestration.task_runs import RunResult, TaskRun
@@ -36,5 +37,6 @@ HANDLERS: Mapping[str, Handler] = {
     price_bars.TASK_ID: price_bars.ingest_prices,
     sec_filings.TASK_ID: sec_filings.ingest_sec_filings,
     splits.TASK_ID: splits.ingest_splits,
+    tenk_sections.TASK_ID: tenk_sections.extract_10k_sections,
     xbrl_refresh.TASK_ID: xbrl_refresh.refresh_xbrl_facts,
 }
