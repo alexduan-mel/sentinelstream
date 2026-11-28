@@ -11,7 +11,7 @@ M3 explains a company from its own filings: key financials straight from XBRL, a
 - [x] Key financials from XBRL: revenue, gross margin, operating income, net income, diluted EPS, cash, total debt, shares outstanding and free cash flow, by quarter and fiscal year; each company's tags mapped to one line item; every value linked to the filings it came from (ADR 0020)
 - [x] XBRL facts kept current: a watchlist company's new 10-Q, 10-K or 20-F reaches `xbrl_facts` without re-onboarding (ADR 0021)
 - [x] Ticker page: key financials for the last 8 quarters, with a fiscal-year toggle, each number linked to its filing
-- [ ] 10-K sections extracted for domestic filers: risk factors (Item 1A) and MD&A (Item 7), split into paragraphs, from the filing as accepted
+- [x] 10-K sections extracted for domestic filers: risk factors (Item 1A) and MD&A (Item 7), split into paragraphs, from the filing as accepted (ADR 0022)
 - [ ] Year-over-year 10-K diff: paragraphs added, removed and changed, stored with citations (accession number, section, paragraph)
 - [ ] 10-K changes on the ticker page, each linked to its section in the filing
 - [ ] Stretch: short LLM summaries of the changes, schema-validated, any claim without a citation rejected (ground rule 6)
