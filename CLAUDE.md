@@ -12,7 +12,7 @@ M3 explains a company from its own filings: key financials straight from XBRL, a
 - [x] XBRL facts kept current: a watchlist company's new 10-Q, 10-K or 20-F reaches `xbrl_facts` without re-onboarding (ADR 0021)
 - [x] Ticker page: key financials for the last 8 quarters, with a fiscal-year toggle, each number linked to its filing
 - [x] 10-K sections extracted for domestic filers: risk factors (Item 1A) and MD&A (Item 7), split into paragraphs, from the filing as accepted (ADR 0022)
-- [ ] Year-over-year 10-K diff: paragraphs added, removed and changed, stored with citations (accession number, section, paragraph)
+- [x] Year-over-year 10-K diff: paragraphs added, removed and changed, stored with citations (accession number, section, paragraph) (ADR 0023)
 - [ ] 10-K changes on the ticker page, each linked to its section in the filing
 - [ ] Stretch: short LLM summaries of the changes, schema-validated, any claim without a citation rejected (ground rule 6)
 
