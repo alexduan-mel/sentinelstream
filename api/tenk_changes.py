@@ -4,7 +4,8 @@ Serves the newest stored comparison of Item 1A (risk factors) or Item 7 (MD&A): 
 links to the section in each document, the counts, and every added, removed or changed paragraph
 with its text and paragraph numbers. Changes are grouped under the heading they fall under, in this
 year's reading order. A changed paragraph comes as word runs (kept, deleted, inserted), so the page
-can show last year's and this year's wording in one place.
+can show last year's and this year's wording in one place. When Claude has summarized the changes,
+``summary`` carries the checked points, each citing the changes it rests on (ADR 0024).
 """
 
 from __future__ import annotations
@@ -67,12 +68,29 @@ class ChangeGroup(BaseModel):
     changes: list[ParagraphChange]
 
 
+class SummaryPoint(BaseModel):
+    text: str
+    # The changes (change_no) the point rests on; each cites paragraphs in both 10-Ks.
+    change_nos: list[int]
+
+
+class ChangeSummary(BaseModel):
+    # ok: points passed every check (none means nothing significant changed); rejected / refused:
+    # nothing to show; no_changes: only figures or dates changed (ADR 0024).
+    status: Literal["ok", "rejected", "refused", "no_changes"]
+    model: str | None
+    written_at: datetime
+    points: list[SummaryPoint]
+    rejected_count: int
+
+
 class Comparison(BaseModel):
     new: TenK
     old: TenK
     counts: Counts
     computed_at: datetime
     groups: list[ChangeGroup]
+    summary: ChangeSummary | None = None
 
 
 class TenKChanges(BaseModel):
@@ -103,6 +121,25 @@ def _tenk(cursor, cik: str, accession_no: str, item: str) -> TenK:
         section_url=f"{url}#{anchor}" if anchor else url,
         index_url=sec_index_url(cik, accession_no),
     )
+
+
+def _summary(cursor, accession_no: str, item: str) -> ChangeSummary | None:
+    cursor.execute(
+        "SELECT status, model, known_at, rejected_count FROM filing_change_summaries "
+        "WHERE new_accession_no = %s AND item = %s",
+        (accession_no, item),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        return None
+    status, model, written_at, rejected = row
+    cursor.execute(
+        "SELECT text, change_nos FROM filing_change_summary_points "
+        "WHERE new_accession_no = %s AND item = %s ORDER BY point_no",
+        (accession_no, item),
+    )
+    points = [SummaryPoint(text=text, change_nos=list(numbers)) for text, numbers in cursor.fetchall()]
+    return ChangeSummary(status=status, model=model, written_at=written_at, points=points, rejected_count=rejected)
 
 
 def _paragraphs(cursor, accession_no: str, item: str) -> list[str]:
@@ -215,5 +252,6 @@ def get_tenk_changes(symbol: str, conn: DbConn, item: Item = "1A") -> TenKChange
             ),
             computed_at=computed_at,
             groups=groups,
+            summary=_summary(cursor, new_accession, item),
         )
     return result

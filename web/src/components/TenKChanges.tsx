@@ -9,6 +9,7 @@ import {
   getTenKChanges,
   paragraphLabel,
   visibleGroups,
+  type ChangeSummary,
   type ParagraphChange,
   type TenKChanges as Changes,
   type TenKItem
@@ -62,6 +63,60 @@ function ChangeText({ change }: { change: ParagraphChange }) {
   );
 }
 
+/** The in-page target of a change, so a summary point can link to the changes it cites. */
+export function changeAnchor(changeNo: number): string {
+  return `change-${changeNo}`;
+}
+
+function SummaryBlock({ summary }: { summary: ChangeSummary }) {
+  if (summary.status === "no_changes") return null;
+  if (summary.status !== "ok") {
+    return (
+      <Muted>
+        {summary.status === "refused"
+          ? "No summary: the model declined to summarize this section."
+          : "No summary: every point the model wrote failed the citation checks."}
+      </Muted>
+    );
+  }
+  const left = summary.rejected_count;
+  return (
+    <div className="max-w-[880px] space-y-4 border border-solid border-border-default bg-bg-surface p-12">
+      <Typography.Text strong className="block">
+        Summary
+      </Typography.Text>
+      {summary.points.length === 0 ? (
+        <Muted>The model found no significant change.</Muted>
+      ) : (
+        <ul className="m-0 list-disc space-y-4 pl-16">
+          {summary.points.map((point) => (
+            <li key={point.text}>
+              {point.text}{" "}
+              {point.change_nos.map((number) => (
+                <a
+                  key={number}
+                  href={`#${changeAnchor(number)}`}
+                  className="mr-4 whitespace-nowrap"
+                >
+                  {`[${number}]`}
+                </a>
+              ))}
+            </li>
+          ))}
+        </ul>
+      )}
+      <Typography.Text type="secondary" className="block !text-[12px]">
+        {`Written by ${summary.model ?? "a model"} on ${dayLabel(summary.written_at.slice(0, 10))} from the changes below, not from the whole 10-K. ` +
+          "Each point links to the changes it rests on (the numbers on the left of each change); " +
+          (left > 0
+            ? `${left} ${left === 1 ? "point" : "points"} without a valid citation ${left === 1 ? "was" : "were"} left out. `
+            : "") +
+          "Check a point against its changes before relying on it."}
+      </Typography.Text>
+    </div>
+  );
+}
+
 function ChangeRow({ change, link }: { change: ParagraphChange; link: string }) {
   const kind = KIND[change.kind];
   const similarity =
@@ -69,8 +124,14 @@ function ChangeRow({ change, link }: { change: ParagraphChange; link: string }) 
       ? ` · ${Math.round(change.similarity * 100)}% of words the same`
       : "";
   return (
-    <div className="flex flex-col gap-4 border-0 border-t border-solid border-border-subtle py-8 sm:flex-row sm:gap-12">
-      <div className="shrink-0 sm:w-[76px]">
+    <div
+      id={changeAnchor(change.change_no)}
+      className="flex scroll-mt-16 flex-col gap-4 border-0 border-t border-solid border-border-subtle py-8 target:bg-state-selected sm:flex-row sm:gap-12"
+    >
+      <div className="flex shrink-0 items-start gap-4 sm:w-[96px]">
+        <Typography.Text type="secondary" className="w-[24px] !text-[12px]">
+          {`[${change.change_no}]`}
+        </Typography.Text>
         <Tooltip title={kind.help} mouseEnterDelay={0.05}>
           <Tag className="sentinel-tag cursor-help" color={kind.color}>
             {kind.label}
@@ -152,6 +213,7 @@ export function TenKChanges({
           </div>
           <Muted>{countsLabel(comparison.counts)}</Muted>
         </div>
+        {comparison.summary && <SummaryBlock summary={comparison.summary} />}
         {comparison.counts.numbers_only > 0 && (
           <Checkbox
             checked={showNumbersOnly}
