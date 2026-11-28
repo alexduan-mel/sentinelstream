@@ -12,7 +12,7 @@ M4 keeps an honest record of the owner's own decisions and measures each one aga
 - [x] Journal page listing every entry with its thesis, source alert and corrections, and "Log a decision" on Alert detail
 - [x] Each entry scored from its trade price, or without one from the first daily close after it was logged, never a price already known then (tests prove it): the stock's return, QQQ's over the same days and SPY's for reference. Opened and Added run until the position's Closed entry; every other entry until the latest close. Scores are worked out from stored bars on each request, so they are always current without a scheduled task (ADR 0026)
 - [x] Alpha and beta for each entry, from a regression of its daily returns on QQQ's since entry ("too early" under 20 trading days), and for all entries together (ADR 0027)
-- [ ] Journal page shows each entry's return against QQQ, its alpha and beta, the record of calls and the my-money view, in plain words and with no buy or sell language (ground rule 7) (ADR 0028)
+- [x] Journal page shows each entry's return against QQQ, its alpha and beta, the record of calls and the my-money view, in plain words and with no buy or sell language (ground rule 7) (ADR 0028)
 
 Next after M4 is the optional **AWS stage 2** (see `docs/PRD.md`).
 
