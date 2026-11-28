@@ -77,6 +77,7 @@ describe("GlossaryPage", () => {
 
     expect(links.map((link) => link.textContent)).toEqual([
       expect.stringMatching(/^SEC and filings\d+$/),
+      expect.stringMatching(/^Company financials\d+$/),
       expect.stringMatching(/^Alerts\d+$/),
       expect.stringMatching(/^Prices and markets\d+$/),
       expect.stringMatching(/^Research\d+$/),

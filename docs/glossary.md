@@ -136,6 +136,76 @@ The SEC's collection of every XBRL number a company has filed, each with the fil
 
 **See also:** XBRL
 
+## Company financials
+
+### Fiscal year and fiscal quarter
+The twelve months a company uses for its accounts, and the four quarters in it. Many companies' years don't match the calendar, so a company names them by the year they end in.
+
+**Example:** NVIDIA's fiscal year 2027 runs from late January 2026 to late January 2027, so the quarter ending in October 2026 is its Q3 FY2027.
+
+**See also:** 10-K and 10-Q; Key financials
+
+### Key financials
+The nine numbers on a ticker page: revenue, gross margin, operating income, net income, diluted EPS, cash, total debt, shares outstanding and free cash flow. Each comes from the company's XBRL and links to the filing it came from.
+
+**See also:** XBRL; Fiscal year and fiscal quarter; Restatement
+
+### Revenue
+The money a company took in from selling its products and services during the period, before any costs.
+
+**See also:** Gross margin; Key financials
+
+### Gross margin
+The share of revenue left after the direct cost of making what was sold. A higher margin means each sale keeps more for everything else.
+
+**Example:** revenue of $100M and a cost of revenue of $30M give a gross margin of 70%.
+
+**See also:** Revenue; Operating income
+
+### Operating income
+What the business earned from its operations: revenue minus the cost of revenue and running costs such as research, sales and administration. Interest and tax come later.
+
+**See also:** Gross margin; Net income
+
+### Net income
+The profit left for shareholders after every cost, interest and tax. Negative means a loss.
+
+**See also:** Operating income; Diluted EPS
+
+### Diluted EPS
+**Short for:** diluted earnings per share
+
+Net income divided by the number of shares, counting the extra shares that stock options and convertible bonds could turn into. A fourth quarter is left empty when only the full year was filed, because per-share figures can't be split by subtraction.
+
+**See also:** Net income; Shares outstanding
+
+### Cash
+Cash and short-term holdings that are as good as cash (cash equivalents), at the end of the period.
+
+**See also:** Total debt; Free cash flow
+
+### Total debt
+Borrowed money still owed at the end of the period: long-term debt, including the part due within a year, plus short-term borrowing. Leases are not counted.
+
+**See also:** Cash
+
+### Shares outstanding
+The number of the company's shares held by investors at the end of the period. When it rises, each share owns a smaller part of the company.
+
+**See also:** Diluted EPS; Split and split-adjusted
+
+### Free cash flow
+Cash the business generated from its operations, minus what it spent on buildings and equipment. It is what is left to repay debt, buy back shares or save.
+
+**Example:** $20B from operations and $6B spent on data centres give $14B of free cash flow.
+
+**See also:** Cash; Net income
+
+### Restatement
+A later filing correcting a figure the company reported before. The ticker page always shows the most recently filed figure, and links to the filing it came from.
+
+**See also:** Key financials; Point in time
+
 ## Alerts
 
 ### Materiality
