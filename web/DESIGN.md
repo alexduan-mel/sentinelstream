@@ -107,11 +107,11 @@ Opened by clicking a row on Alerts (the "SEC ↗" link still opens EDGAR). The A
 - **Companies it is listed under**: one row per linked issuer with its own materiality, the rule's reason, whether it was news or history for that issuer, and when it was first seen.
 - **Form 4 transactions** (only when stored): reporting owner and role, security, date, code with SEC's meaning ("P · Open-market or private purchase"), shares (+ acquired, − disposed), price, shares owned after, direct or indirect.
 - **What followed similar filings** (M2, high filings only), from `base_rates` in the detail API (ADR 0018): a Segmented toggle for the filter setting ("$5+ and $1M+ a day", the default, or "All stocks"); then for each high event, its label ("Insider open-market purchase", "8-K item 2.02 …"), a muted line saying which past filings the numbers are based on ("Based on past filings from companies in the same broad industry (SIC group 36, which includes …)" or "Based on past filings from all US-listed companies (fewer than 30 in this company's industry, so pooled)") and when they were calculated, and a table: After (1, 5, 20, 60 sessions) · Past filings · Average vs QQQ · Median vs QQQ · Beat QQQ · 95% range · vs SPY · Average cost. Returns are signed percentages, green above zero and red below; a range with too few months is a dash explained on hover; each header has an ⓘ in plain words. A muted footnote says the returns are after costs and minus QQQ's over the same days, so the market's own moves are taken out, and are what followed past filings, not a forecast, with a link to the glossary. A high filing with none yet says so in one muted line.
-- Key financials (M3) and "Log a decision" (M4) are added by those milestones, not shown as placeholders.
+- Under the header, "Key financials:" links each ticker to its ticker page (M3). "Log a decision" (M4) is added by that milestone, not shown as a placeholder.
 
 ### Glossary (`/glossary`)
 
-The text of `docs/glossary.md`, the one source for both GitHub and the app: plain-language meanings of every term the app uses, grouped as SEC and filings, Alerts, Prices and markets, Research, and The app.
+The text of `docs/glossary.md`, the one source for both GitHub and the app: plain-language meanings of every term the app uses, grouped as SEC and filings, Company financials, Alerts, Prices and markets, Research, and The app.
 
 - **Two columns.** On the left, a topic list (200px) that stays in view while the page scrolls: each topic with its term count, the one being read marked with the accent rule; clicking jumps to it. On the right, the terms as dictionary rows separated by 1px rules: the term in bold, with what an abbreviation stands for in muted 12px text under it, in a 200px column; then the meaning, a muted **Example:** line, and **See also:** links to related terms.
 - **Search** above both columns narrows them to terms whose name, expansion, meaning or example contains every word typed, and says "3 of 62 terms". Following a See also link clears the search, so the term it names is there.
@@ -119,9 +119,19 @@ The text of `docs/glossary.md`, the one source for both GitHub and the app: plai
 - The file may only use the Markdown the page renders: headings, paragraphs, bold and code. Under a term, paragraphs starting `**Short for:**`, `**Example:**` and `**See also:**` (names separated by semicolons) become those fields. A test fails on anything else, or on a See also that names no term.
 - No cards, category labels, telemetry or keyboard shortcuts.
 
-### Ticker deep dive (M3)
+### Ticker (`/watchlist/:symbol`, M3)
 
-Not built until M3.
+Opened from a ticker on Watchlist (a link once SEC has tied it to a company) or from "Key financials:" on Alert detail. The Watchlist tab stays selected.
+
+Data: `GET /api/instruments/{symbol}/financials` (ADR 0020), from `xbrl_facts`.
+
+- "← Watchlist", then the ticker as the page title, with a muted line: company name · filer type · CIK.
+- **Key financials**, with a Segmented toggle: Quarters (default, the latest 8) or Fiscal years. The choice is in the address (`?basis=annual`), replacing rather than adding a history step. A foreign private issuer files only annual reports with XBRL, so it gets fiscal years and a muted line saying why, with no toggle.
+- One table: metrics down the side (each with an ⓘ giving its definition), periods across, newest first. Each header is the filing's own fiscal label ("Q3 FY2027", "FY2026") over a muted "Ended Oct 26, 2026". Period columns are 140px; spare width stays empty on the right.
+- Every number is a link to the filing it came from (for a worked-out value, the most recently filed source). Hovering shows the exact figure, how it was arrived at (as filed; a longer period minus the part before; worked out from several values) and each filed value used: concept, period, form and filing date. Numbers stay neutral apart from the link color: a loss shows a minus sign, not red.
+- An empty cell is a muted dash, with why on hover: nothing filed for that period, or for a fourth quarter's EPS, that per-share figures can't be split by subtraction.
+- A muted footnote: the latest 8 periods at most, newest first, as filed in XBRL, restatements replace earlier figures, click for the filing, hover for the figure; a link to the glossary's Company financials topic.
+- 10-K changes are added by their own M3 step, not shown as a placeholder.
 
 ## Reference screenshots
 

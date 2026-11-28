@@ -10,6 +10,7 @@ import {
   Typography,
   type TableColumnsType
 } from "antd";
+import { Link } from "react-router-dom";
 
 import { errorMessage } from "../api/client";
 import {
@@ -198,7 +199,15 @@ export function WatchlistPage() {
       title: "Ticker",
       dataIndex: "symbol",
       width: 90,
-      render: (value: string) => <Typography.Text strong>{value}</Typography.Text>
+      // Once SEC has tied the ticker to a company, it opens the ticker page.
+      render: (value: string, item) =>
+        item.cik ? (
+          <Link to={`/watchlist/${encodeURIComponent(value)}`} className="font-semibold">
+            {value}
+          </Link>
+        ) : (
+          <Typography.Text strong>{value}</Typography.Text>
+        )
     },
     {
       title: "Name",

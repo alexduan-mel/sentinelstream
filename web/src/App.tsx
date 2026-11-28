@@ -7,6 +7,7 @@ import { AlertsPage } from "./pages/AlertsPage";
 import { GlossaryPage } from "./pages/GlossaryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { TasksPage } from "./pages/TasksPage";
+import { TickerPage } from "./pages/TickerPage";
 import { WatchlistPage } from "./pages/WatchlistPage";
 
 export default function App() {
@@ -18,6 +19,7 @@ export default function App() {
           <Route path="/" element={<AlertsPage />} />
           <Route path="/alerts/:accessionNo" element={<AlertDetailPage />} />
           <Route path="/watchlist" element={<WatchlistPage />} />
+          <Route path="/watchlist/:symbol" element={<TickerPage />} />
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/glossary" element={<GlossaryPage />} />
         </Route>

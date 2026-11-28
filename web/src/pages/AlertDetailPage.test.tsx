@@ -129,6 +129,7 @@ describe("AlertDetailPage", () => {
     const fetchMock = renderAt(purchase.accession_no, purchase);
 
     expect(await screen.findByRole("heading", { name: "AMZN · Form 4" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "AMZN" }).getAttribute("href")).toBe("/watchlist/AMZN");
     expect(fetchMock).toHaveBeenCalledWith("/api/filings/0001018724-26-000002", expect.anything());
     expect(screen.getByText("Open-market purchase · 1,000 sh")).toBeTruthy();
     expect(

@@ -211,6 +211,17 @@ export function AlertDetailPage() {
         {filing.materiality === "high" && filing.materiality_reason && (
           <Muted>{`Flagged: ${filing.materiality_reason}`}</Muted>
         )}
+        {filing.tickers.length > 0 && (
+          <div>
+            <Muted>Key financials: </Muted>
+            {filing.tickers.map((ticker, index) => (
+              <span key={ticker}>
+                {index > 0 && ", "}
+                <Link to={`/watchlist/${encodeURIComponent(ticker)}`}>{ticker}</Link>
+              </span>
+            ))}
+          </div>
+        )}
       </Space>
 
       <Descriptions
