@@ -129,8 +129,9 @@ class Score:
     r_squared: float | None = None
     market_part: float | None = None
     alpha: float | None = None
-    # The (stock, QQQ) daily return pairs the fit used; not sent to the page.
+    # The (stock, QQQ) daily return pairs the fit used, and QQQ's start price; not sent to the page.
     daily: tuple[tuple[float, float], ...] = ()
+    start_qqq: float | None = None
 
 
 WAITING = Score("waiting", None, None, None, None, None, None, None, None, 0, None, None, None, None, None)
@@ -189,26 +190,39 @@ def _latest_point(stock: Series, qqq: Series, spy: Series | None) -> Point | Non
     return Point(day, "next_close", stock_close, qqq_close, spy_close)
 
 
-def _closing_entries(entries: Iterable[Entry]) -> dict[int, Entry]:
-    """For each counted Opened and Added, the counted Closed that ended its position, if any."""
+def _trade_order(entry: Entry) -> tuple:
+    return (entry.traded_on or entry.known_at.astimezone(NEW_YORK).date(), entry.known_at, entry.id)
+
+
+def positions(entries: Iterable[Entry]) -> list[list[Entry]]:
+    """The counted entries of each position, in trade order: an Opened, then its Added and Trimmed,
+    and the Closed that ended it if there is one. Passes belong to no position."""
     by_symbol: dict[str, list[Entry]] = {}
     for entry in entries:
-        if entry.withdrawn is None:
+        if entry.withdrawn is None and entry.action != "pass":
             by_symbol.setdefault(entry.symbol, []).append(entry)
-    closing: dict[int, Entry] = {}
+    found: list[list[Entry]] = []
     for symbol_entries in by_symbol.values():
-        ordered = sorted(
-            symbol_entries,
-            key=lambda e: (e.traded_on or e.known_at.astimezone(NEW_YORK).date(), e.known_at, e.id),
-        )
-        holding: list[Entry] = []
-        for entry in ordered:
-            if entry.action in ("opened", "added"):
-                holding.append(entry)
-            elif entry.action == "closed":
-                for held in holding:
-                    closing[held.id] = entry
-                holding = []
+        current: list[Entry] | None = None
+        for entry in sorted(symbol_entries, key=_trade_order):
+            if entry.action == "opened":
+                current = [entry]
+                found.append(current)
+            elif current is not None:
+                current.append(entry)
+                if entry.action == "closed":
+                    current = None
+    return found
+
+
+def _closing_entries(entries: Iterable[Entry]) -> dict[int, Entry]:
+    """For each counted Opened and Added, the counted Closed that ended its position, if any."""
+    closing: dict[int, Entry] = {}
+    for position in positions(entries):
+        if position[-1].action == "closed":
+            for entry in position:
+                if entry.action in ("opened", "added"):
+                    closing[entry.id] = position[-1]
     return closing
 
 
@@ -309,6 +323,7 @@ def score_entries(entries: list[Entry], series: dict[str, Series]) -> dict[int, 
             market_part=market_part,
             alpha=None if market_part is None or stock_return is None else stock_return - market_part,
             daily=daily,
+            start_qqq=start.qqq,
         )
     return scores
 
@@ -348,6 +363,117 @@ def combine(entries: list[Entry], scores: dict[int, Score]) -> Combined:
         beta_of_holdings=holdings.beta if holdings else None,
         holdings_days=len(held),
     )
+
+
+@dataclasses.dataclass(frozen=True)
+class Position:
+    """One position in money (ADR 0028), from the share counts and prices of its entries."""
+
+    symbol: str
+    opened_id: int
+    start_date: date | None
+    end_date: date | None
+    status: Literal["open", "closed"]
+    # Left out of the totals, and why: an entry gave no share count, or has no price to start from yet.
+    excluded: Literal["no_shares", "waiting"] | None
+    bought: float | None  # dollars put in, at each entry's start price
+    sold: float | None  # dollars taken out by Trimmed and Closed
+    value: float | None  # what the shares still held are worth at the latest close
+    profit: float | None  # sold + value - bought
+    # The same dollars put into QQQ at the same points, and taken out in the same proportions.
+    qqq_profit: float | None
+
+
+@dataclasses.dataclass(frozen=True)
+class Money:
+    positions: list[Position]
+    bought: float
+    profit: float
+    qqq_profit: float
+    excluded: int
+
+
+def _position_money(position: list[Entry], scores: dict[int, Score], stock: Series | None,
+                    qqq: Series | None) -> Position:  # fmt: skip
+    first, last = position[0], position[-1]
+    status: Literal["open", "closed"] = "closed" if last.action == "closed" else "open"
+    base = dict(symbol=first.symbol, opened_id=first.id, status=status)
+
+    def excluded(reason: Literal["no_shares", "waiting"], start=None, end=None) -> Position:
+        return Position(**base, start_date=start, end_date=end, excluded=reason, bought=None, sold=None,
+                        value=None, profit=None, qqq_profit=None)  # fmt: skip
+
+    if any(entry.shares is None for entry in position):
+        return excluded("no_shares")
+    starts = [scores.get(entry.id) for entry in position]
+    if stock is None or qqq is None or any(s is None or s.status != "scored" for s in starts):
+        return excluded("waiting")
+
+    held = units = bought = sold = qqq_bought = qqq_sold = 0.0
+    for entry, score in zip(position, starts, strict=True):
+        shares = entry.shares * split_factor(stock.splits, score.start_date, date.max)
+        price, qqq_price = score.start_price, score.start_qqq
+        if entry.action in ("opened", "added"):
+            held += shares
+            bought += shares * price
+            units += shares * price / qqq_price
+            qqq_bought += shares * price
+        else:
+            fraction = 1.0 if entry.action == "closed" else min(shares / held, 1.0)
+            sold += held * fraction * price
+            qqq_sold += units * fraction * qqq_price
+            held -= held * fraction
+            units -= units * fraction
+    latest, latest_qqq = _close(stock.latest()), _close(qqq.latest())
+    if held > 0 and (latest is None or latest_qqq is None):
+        return excluded("waiting")
+    value = held * latest if held > 0 else 0.0
+    qqq_value = units * latest_qqq if held > 0 else 0.0
+    end = starts[-1].start_date if status == "closed" else stock.latest().trading_date
+    return Position(
+        **base,
+        start_date=starts[0].start_date,
+        end_date=end,
+        excluded=None,
+        bought=bought,
+        sold=sold,
+        value=value,
+        profit=sold + value - bought,
+        qqq_profit=qqq_sold + qqq_value - qqq_bought,
+    )
+
+
+def money(entries: list[Entry], scores: dict[int, Score], series: dict[str, Series]) -> Money:
+    """Every position in dollars and against the same dollars in QQQ (ADR 0028). Only positions whose
+    every entry gave a share count are totalled, so the totals are complete only if every trade is
+    logged that way."""
+    found = [
+        _position_money(position, scores, series.get(position[0].symbol), series.get(BENCHMARK))
+        for position in positions(entries)
+    ]
+    counted = [p for p in found if p.excluded is None]
+    found.sort(key=lambda p: (p.status != "open", -(p.start_date or date.min).toordinal(), p.symbol))
+    return Money(
+        positions=found,
+        bought=sum(p.bought for p in counted),
+        profit=sum(p.profit for p in counted),
+        qqq_profit=sum(p.qqq_profit for p in counted),
+        excluded=len(found) - len(counted),
+    )
+
+
+@dataclasses.dataclass(frozen=True)
+class Report:
+    scores: dict[int, Score]
+    combined: Combined
+    money: Money
+
+
+def journal_report(conn: Connection, entries: list[Entry], as_of: datetime) -> Report:
+    """Scores, the combined record and the money view, from what was stored before ``as_of``."""
+    series = load_series(conn, {e.symbol for e in entries}, as_of)
+    scores = score_entries(entries, series)
+    return Report(scores, combine(entries, scores), money(entries, scores, series))
 
 
 def load_series(conn: Connection, symbols: Iterable[str], as_of: datetime) -> dict[str, Series]:

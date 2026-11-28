@@ -464,6 +464,16 @@ def list_entries(conn: Connection, *, symbol: str | None = None, entry_id: int |
     return entries
 
 
+def journal_tickers(conn: Connection) -> list[str]:
+    """Every ticker with at least one entry, alphabetically."""
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "SELECT DISTINCT i.symbol FROM journal_entries e JOIN instruments i ON i.id = e.instrument_id "
+            "ORDER BY i.symbol"
+        )
+        return [row[0] for row in cursor.fetchall()]
+
+
 def open_positions(conn: Connection) -> list[str]:
     """Tickers whose counted entries leave a position open, alphabetically."""
     with conn.cursor() as cursor:

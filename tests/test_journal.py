@@ -137,6 +137,7 @@ def test_actions_follow_a_position(signed_in_client, journal_db) -> None:
     journal = signed_in_client.get("/api/journal", params={"symbol": "nvda"}).json()
     assert [e["action"] for e in journal["entries"]] == ["closed", "trimmed", "added", "opened", "pass"]
     assert journal["open_positions"] == ["AMZN"]
+    assert journal["tickers"] == ["AMZN", "NVDA"]  # every ticker with an entry, whatever the filter
 
 
 @pytest.mark.parametrize(
