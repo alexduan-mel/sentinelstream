@@ -86,6 +86,7 @@ describe("docs/glossary.md", () => {
       "Alerts",
       "Prices and markets",
       "Research",
+      "Journal",
       "The app"
     ]);
     expect(terms.length).toBeGreaterThan(50);

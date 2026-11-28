@@ -81,6 +81,7 @@ describe("GlossaryPage", () => {
       expect.stringMatching(/^Alerts\d+$/),
       expect.stringMatching(/^Prices and markets\d+$/),
       expect.stringMatching(/^Research\d+$/),
+      expect.stringMatching(/^Journal\d+$/),
       expect.stringMatching(/^The app\d+$/)
     ]);
     // The topic being read is marked (jsdom has no layout, so which one is not checked here).
