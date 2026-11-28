@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import Scope
 
-from api import auth, filings, financials, instruments, tasks
+from api import auth, filings, financials, instruments, tasks, tenk_changes
 from api.db import Connect, default_connect
 
 DEFAULT_WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
@@ -71,6 +71,7 @@ def create_app(
     app.include_router(filings.router, dependencies=signed_in)
     app.include_router(instruments.router, dependencies=signed_in)
     app.include_router(financials.router, dependencies=signed_in)
+    app.include_router(tenk_changes.router, dependencies=signed_in)
 
     # Mounted last so API routes always win over static files.
     if resolved_web_dist.is_dir():

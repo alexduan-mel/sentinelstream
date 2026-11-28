@@ -13,6 +13,7 @@ import {
   type MetricInfo,
   type MetricValue
 } from "../api/financials";
+import type { TenKChanges } from "../api/tenkChanges";
 import { installDomStubs } from "../test/dom";
 import { TickerPage } from "./TickerPage";
 
@@ -114,15 +115,38 @@ function financials(extra: Partial<KeyFinancials> = {}): KeyFinancials {
   };
 }
 
-function mockApi(answer: (url: string) => KeyFinancials | Response) {
+/** No 10-K comparison yet: the 10-K changes section says so in one line. */
+function noComparison(url: string): TenKChanges {
+  return {
+    symbol: "NVDA",
+    cik: "0001045810",
+    filer_type: "domestic",
+    item: url.includes("item=7") ? "7" : "1A",
+    item_label: url.includes("item=7") ? "Management's discussion and analysis" : "Risk factors",
+    comparison: null
+  };
+}
+
+function mockApi(
+  answer: (url: string) => KeyFinancials | Response,
+  tenk: (url: string) => TenKChanges | Response = noComparison
+) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    const result = answer(String(input));
+    const url = String(input);
+    const result = url.includes("/tenk-changes") ? tenk(url) : answer(url);
     return result instanceof Response
       ? result
       : new Response(JSON.stringify(result), { status: 200 });
   });
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
+}
+
+/** The key-financials requests made, in order. */
+function financialCalls(fetchMock: ReturnType<typeof mockApi>): string[] {
+  return fetchMock.mock.calls
+    .map(([input]) => String(input))
+    .filter((url) => url.includes("/financials"));
 }
 
 function Search() {
@@ -181,7 +205,7 @@ describe("TickerPage", () => {
     expect(screen.getAllByText("Q3 FY2027").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Ended Oct 26, 2026").length).toBeGreaterThan(0);
     expect(screen.getByText("NVIDIA CORP · Domestic filer · CIK 0001045810")).toBeTruthy();
-    expect(String(fetchMock.mock.calls[0][0])).toBe(
+    expect(financialCalls(fetchMock)[0]).toBe(
       "/api/instruments/NVDA/financials?basis=quarterly&periods=8"
     );
 
@@ -223,9 +247,7 @@ describe("TickerPage", () => {
     fireEvent.click(screen.getByText("Fiscal years"));
     expect((await screen.findAllByText("FY2027")).length).toBeGreaterThan(0);
     expect(screen.getByTestId("search").textContent).toBe("?basis=annual");
-    expect(String(fetchMock.mock.calls[fetchMock.mock.calls.length - 1][0])).toContain(
-      "basis=annual"
-    );
+    expect(financialCalls(fetchMock).slice(-1)[0]).toContain("basis=annual");
   });
 
   it("shows only fiscal years for a foreign private issuer", async () => {
@@ -243,7 +265,7 @@ describe("TickerPage", () => {
     expect((await screen.findAllByText("FY2027")).length).toBeGreaterThan(0);
     expect(screen.queryByText("Quarters")).toBeNull();
     expect(screen.getByText(/Files a 20-F once a year/)).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(financialCalls(fetchMock)).toHaveLength(2);
   });
 
   it("says so when nothing is filed, and shows API errors with Retry", async () => {

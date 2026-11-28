@@ -131,7 +131,13 @@ Data: `GET /api/instruments/{symbol}/financials` (ADR 0020), from `xbrl_facts`.
 - Every number is a link to the filing it came from (for a worked-out value, the most recently filed source). Hovering shows the exact figure, how it was arrived at (as filed; a longer period minus the part before; worked out from several values) and each filed value used: concept, period, form and filing date. Numbers stay neutral apart from the link color: a loss shows a minus sign, not red.
 - An empty cell is a muted dash, with why on hover: nothing filed for that period, or for a fourth quarter's EPS, that per-share figures can't be split by subtraction.
 - A muted footnote: the latest 8 periods at most, newest first, as filed in XBRL, restatements replace earlier figures, click for the filing, hover for the figure; a link to the glossary's Company financials topic.
-- 10-K changes are added by their own M3 step, not shown as a placeholder.
+- **Changes in the 10-K** (`GET /api/instruments/{symbol}/tenk-changes?item=1A|7`, ADR 0023), under Key financials. A Segmented toggle: Risk factors (default) or MD&A, kept in the address (`?item=7`).
+  - One line names the two 10-Ks ("Risk factors in the 10-K for the year ended Dec 31, 2025, filed Feb 6, 2026, against the one filed Feb 7, 2025"), with links to the section in this year's and last year's document, opened at its heading. A muted line gives the counts: changed (and how many only in figures or dates), added, removed, unchanged.
+  - Changes in figures or dates only are hidden behind a checkbox with their count.
+  - Changes are grouped under the heading they fall under (a risk title or a sub-heading such as "Overview"; "Start of the section" before the first), in this year's reading order.
+  - Each change: a tag (Added green, Removed red, Changed neutral, with what it means on hover), the text (a changed paragraph word by word: struck-out words on a faint red, added words on a faint green), then a muted line with the paragraph number in each year, the share of words that stayed, and a link to the section in the 10-K it is in. Text is at most 880px wide; on a phone the tag sits above it.
+  - No comparison: one muted line, saying a 20-F filer is not compared yet, or that two years of 10-Ks are needed.
+  - A muted footnote: paragraphs are matched by wording, not by a model; figure tables are left out; a link to the glossary.
 
 ## Reference screenshots
 
