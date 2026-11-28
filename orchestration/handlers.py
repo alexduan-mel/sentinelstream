@@ -12,7 +12,7 @@ from collections.abc import Callable, Mapping
 
 from psycopg2.extensions import connection as Connection
 
-from filings import section_diffs
+from filings import change_summaries, section_diffs
 from ingestion import (
     insider_datasets,
     market_8k,
@@ -32,6 +32,7 @@ Handler = Callable[[TaskRun, Connection], RunResult]
 HANDLERS: Mapping[str, Handler] = {
     base_rates.TASK_ID: base_rates.compute_base_rates,
     section_diffs.TASK_ID: section_diffs.diff_10k_sections,
+    change_summaries.TASK_ID: change_summaries.summarize_10k_changes,
     insider_datasets.TASK_ID: insider_datasets.ingest_insider_datasets,
     market_8k.TASK_ID: market_8k.ingest_market_8k,
     market_bars.TASK_ID: market_bars.ingest_market_bars,

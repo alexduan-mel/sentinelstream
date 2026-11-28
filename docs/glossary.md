@@ -89,7 +89,7 @@ Item 7 of a 10-K: management's own explanation of the year's results, what drove
 **See also:** 10-K and 10-Q; Risk factors; 10-K changes
 
 ### 10-K changes
-What changed in a 10-K's risk factors or MD&A since the year before, paragraph by paragraph. A paragraph is **added** (this year only), **removed** (last year only) or **changed** (at least 60% of its words are the same, the rest reworded). A change in figures or dates only, such as last year's revenue becoming this year's, is hidden unless asked for. Paragraphs are matched by their wording, not by a model.
+What changed in a 10-K's risk factors or MD&A since the year before, paragraph by paragraph. A paragraph is **added** (this year only), **removed** (last year only) or **changed** (at least 60% of its words are the same, the rest reworded). A change in figures or dates only, such as last year's revenue becoming this year's, is hidden unless asked for. Paragraphs are matched by their wording, not by a model. Above them, a short summary written by a model (Claude) may list the most significant changes; every point links to the changes it rests on, and points that cite nothing, cite the wrong changes or state a figure not in them are dropped before anything is shown.
 
 **Example:** "Revenue was $60.9 billion in fiscal year 2024" becoming "Revenue was $130.5 billion in fiscal year 2025" is a change in figures and dates only.
 

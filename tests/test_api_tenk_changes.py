@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from filings.change_summaries import Point, Written, summarize_10k_changes
 from filings.tenk_diff import heading_before, is_heading, word_changes
+from tests.test_onboarding import _run
 from tests.test_tenk import LONG
 from tests.test_tenk_diff import _diff, _extracted
 from tests.test_tenk_sections import TEN_K_2025, TEN_K_2026
@@ -68,6 +70,8 @@ def test_the_latest_comparison_with_citations_and_links(signed_in_client, connec
     assert {"op": "insert", "text": "$130.5 "} in changed["words"]
     assert (added["kind"], added["new_paragraph_no"], added["words"]) == ("added", 5, None)
 
+    assert comparison["summary"] is None  # not summarized yet
+
     mdna = signed_in_client.get("/api/instruments/NVDA/tenk-changes", params={"item": "7"}).json()
     assert mdna["item_label"] == "Management's discussion and analysis"
     assert mdna["comparison"]["groups"] == []  # MD&A did not change
@@ -104,3 +108,23 @@ def test_no_comparison_yet_and_bad_requests(signed_in_client, connect_app_db) ->
     assert signed_in_client.get("/api/instruments/ZZZZ/tenk-changes").status_code == 404
     assert signed_in_client.get("/api/instruments/QQQ/tenk-changes").status_code == 404
     assert signed_in_client.get("/api/instruments/NVDA/tenk-changes", params={"item": "2"}).status_code == 422
+
+
+def test_the_checked_summary_comes_with_the_changes(signed_in_client, connect_app_db) -> None:
+    conn = connect_app_db()
+    _extracted(conn)
+    _diff(conn)
+    written = Written(
+        points=[
+            Point(text="A risk about export licences was added.", change_ids=[3]),
+            Point(text="Buy the stock now.", change_ids=[3]),
+        ],
+        model="claude-opus-5-5",
+    )
+    summarize_10k_changes(_run(conn, task_id="summarize_10k_changes"), conn, writer=lambda prompt: written)
+
+    summary = signed_in_client.get("/api/instruments/NVDA/tenk-changes").json()["comparison"]["summary"]
+    assert summary["status"] == "ok"
+    assert summary["model"] == "claude-opus-5-5"
+    assert summary["points"] == [{"text": "A risk about export licences was added.", "change_nos": [3]}]
+    assert summary["rejected_count"] == 1
