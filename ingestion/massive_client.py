@@ -30,6 +30,10 @@ class MassiveError(RuntimeError):
     pass
 
 
+class MassiveNotPublishedError(MassiveError):
+    """The day asked for has not ended yet in New York, so Massive does not serve it yet."""
+
+
 class MassiveEntitlementError(MassiveError):
     """The requested date is outside the history the plan includes."""
 
@@ -133,7 +137,8 @@ class MassiveClient:
 
         Returns the provider payload; ``results`` holds one aggregate per symbol (``T``), empty when
         there was no session or Massive has not published it yet. A day before the plan's history
-        raises :class:`MassiveEntitlementError`.
+        raises :class:`MassiveEntitlementError`; a day not over yet in New York raises
+        :class:`MassiveNotPublishedError`.
         """
         what = f"grouped daily {day.isoformat()}"
         path = f"/v2/aggs/grouped/locale/us/market/stocks/{day.isoformat()}"
@@ -150,6 +155,8 @@ class MassiveClient:
         body = self._redact(response.text.strip())[:300]
         if response.status_code == 403 and "historical entitlement" in body.lower():
             raise MassiveEntitlementError(f"{what} is before the history the Massive plan includes")
+        if response.status_code == 403 and "before end of day" in body.lower():
+            raise MassiveNotPublishedError(f"{what} is not published until the day ends in New York")
         if response.status_code >= 400:
             hint = " Check MASSIVE_API_KEY and plan permissions." if response.status_code in (401, 403) else ""
             raise MassiveError(f"Massive request for {what} failed: HTTP {response.status_code} {body}{hint}")

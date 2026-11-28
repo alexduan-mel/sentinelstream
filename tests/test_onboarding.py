@@ -16,8 +16,8 @@ from orchestration.task_runs import TaskRun, enqueue_run
 from tests.test_price_ingestion import FakeMassive
 from tests.test_sec_ingestion import NBIS_CIK, NVDA_CIK, NVDA_FILINGS, TICKER_MAP, FakeSec, _filing, _submissions
 
-# Wednesday 25 Nov 2026, after the close: two years back is 25 Nov 2024.
-NOW = datetime(2026, 11, 25, 22, 0, tzinfo=UTC)
+# Thursday 26 Nov 2026, 05:00 New York: 25 Nov has ended, so its bars are the latest Massive serves.
+NOW = datetime(2026, 11, 26, 10, 0, tzinfo=UTC)
 TEN_Q = "0001045810-26-000100"  # NVDA's 10-Q in NVDA_FILINGS, accepted 2026-11-19 21:20 UTC
 
 NVDA_FACTS = {

@@ -21,8 +21,9 @@ from ingestion.price_bars import bar_rows, ingest_prices
 from orchestration.task_runs import TaskRun, enqueue_run
 
 KEY = "test-key-not-real"
-# Wednesday 25 Nov 2026, 22:00 UTC = 17:00 New York, after the close: the target session is 25 Nov.
-NOW = datetime(2026, 11, 25, 22, 0, tzinfo=UTC)
+# Thursday 26 Nov 2026, 10:00 UTC = 05:00 New York, the morning after Wednesday 25 Nov ended: the
+# target session is 25 Nov (Massive serves a day only once it has ended in New York).
+NOW = datetime(2026, 11, 26, 10, 0, tzinfo=UTC)
 TARGET = date(2026, 11, 25)
 
 

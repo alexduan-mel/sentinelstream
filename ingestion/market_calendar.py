@@ -101,3 +101,19 @@ def latest_completed_session(now: datetime) -> date:
     while not is_trading_day(candidate):
         candidate -= timedelta(days=1)
     return candidate
+
+
+def latest_published_session(now: datetime) -> date:
+    """The most recent trading day whose whole calendar day has ended in New York at ``now``.
+
+    Massive's plan serves a day's bars only once that day is over: asking after the close but before
+    midnight New York gets HTTP 403 "Attempted to request today's data before end of day" from the
+    grouped endpoint and no bar from the per-symbol one. Jobs that fetch from Massive aim at this
+    session, not :func:`latest_completed_session`. A bar's ``known_at`` is still its session close.
+    """
+    if now.tzinfo is None:
+        raise ValueError("now must be timezone-aware")
+    candidate = now.astimezone(NEW_YORK).date() - timedelta(days=1)
+    while not is_trading_day(candidate):
+        candidate -= timedelta(days=1)
+    return candidate

@@ -2,12 +2,13 @@
 
 One request to Massive's grouped-daily endpoint returns every US stock's bar for one trading day
 (about 12,600 symbols, 1.3 MB). The job wants every trading day from two years back (the free plan's
-history) to the latest closed session, and fetches the ones not recorded in ``market_bar_days``:
+history) to the latest session Massive serves, which is the latest one whose day has ended in New
+York. It fetches the days not recorded in ``market_bar_days``:
 
 * **Oldest first.** The plan's history drops its oldest day each day, so those go first.
 * **A few days per run** (``max_days``, default 5, about a minute at 5 requests a minute). The
   worker runs one job at a time, so a long run would hold up the 5-minute SEC poll. The task runs
-  every 10 minutes; once history is complete a run makes no request until a new session closes.
+  every 10 minutes; once history is complete a run makes no request until another trading day has ended.
 * **A day is stored whole or not at all,** bars and its ``market_bar_days`` row in one transaction.
   A rerun of a stored day overwrites its rows, so reruns never duplicate.
 
@@ -16,8 +17,8 @@ What a fetched day becomes:
 * bars → ``loaded``;
 * no bars, and the day closed more than ``SETTLE_DAYS`` ago → ``empty`` (an unscheduled closure the
   calendar does not know, such as the national day of mourning on 9 January 2025);
-* no bars for a recent day → nothing recorded: Massive has not published it yet, and the next run
-  asks again;
+* no bars for a recent day, or Massive's "before end of day" refusal → nothing recorded: Massive has
+  not published it yet, and the next run asks again;
 * before the plan's history → ``unavailable``, never asked again.
 
 Any other provider error stops the run: the rest would most likely fail the same way, and stopping
@@ -34,8 +35,8 @@ from typing import Any
 from psycopg2.extensions import connection as Connection
 from psycopg2.extras import execute_values
 
-from ingestion.market_calendar import NEW_YORK, is_trading_day, latest_completed_session
-from ingestion.massive_client import MassiveClient, MassiveEntitlementError, MassiveError
+from ingestion.market_calendar import NEW_YORK, is_trading_day, latest_published_session
+from ingestion.massive_client import MassiveClient, MassiveEntitlementError, MassiveError, MassiveNotPublishedError
 from orchestration.task_runs import RunResult, TaskRun
 
 LOGGER = logging.getLogger(__name__)
@@ -167,7 +168,7 @@ def ingest_market_bars(
     run: TaskRun, conn: Connection, *, massive: MassiveClient | None = None, now: datetime | None = None
 ) -> RunResult:
     now = now or datetime.now(UTC)
-    target = latest_completed_session(now)
+    target = latest_published_session(now)
     start = history_start(now.astimezone(NEW_YORK).date())
     max_days = _max_days(run.payload)
 
@@ -194,6 +195,10 @@ def ingest_market_bars(
         for day in todo:
             try:
                 payload = client.grouped_daily(day)
+            except MassiveNotPublishedError:
+                # Only if Massive's day ends later than the calendar's: wait, as for an empty day.
+                meta["waiting"].append(day.isoformat())
+                continue
             except MassiveEntitlementError:
                 store_day(conn, day, status="unavailable", rows=[], invalid=0, request_id=None, task_run_id=run.id)
                 meta["unavailable"].append(day.isoformat())
