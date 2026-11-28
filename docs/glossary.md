@@ -72,7 +72,28 @@ Whether a company reports as a **domestic** company (annual 10-K, quarterly 10-Q
 ### 10-K and 10-Q
 A US company's annual report (10-K) and quarterly report (10-Q), with its financial statements.
 
-**See also:** Filer type; XBRL
+**See also:** Filer type; XBRL; Risk factors; MD&A
+
+### Risk factors
+Item 1A of a 10-K: the company's own list of what could hurt its business or its stock, each risk with a one-sentence title and a few paragraphs explaining it. Companies add, drop and reword risks from year to year, and those changes are often the news.
+
+**Example:** NVIDIA's 2026 10-K added risks about customers' ability to secure the energy and capital to build data centres.
+
+**See also:** 10-K and 10-Q; MD&A; 10-K changes
+
+### MD&A
+**Short for:** Management's Discussion and Analysis of Financial Condition and Results of Operations
+
+Item 7 of a 10-K: management's own explanation of the year's results, what drove them, and the company's cash and borrowing.
+
+**See also:** 10-K and 10-Q; Risk factors; 10-K changes
+
+### 10-K changes
+What changed in a 10-K's risk factors or MD&A since the year before, paragraph by paragraph. A paragraph is **added** (this year only), **removed** (last year only) or **changed** (at least 60% of its words are the same, the rest reworded). A change in figures or dates only, such as last year's revenue becoming this year's, is hidden unless asked for. Paragraphs are matched by their wording, not by a model.
+
+**Example:** "Revenue was $60.9 billion in fiscal year 2024" becoming "Revenue was $130.5 billion in fiscal year 2025" is a change in figures and dates only.
+
+**See also:** Risk factors; MD&A; Accession number
 
 ### 8-K
 A short report a US company must file within days of an important event, such as signing a major contract or a change of CEO. Each 8-K lists numbered items saying what kind of event it covers.
