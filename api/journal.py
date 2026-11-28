@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from api.auth import CurrentUser
 from api.db import DbConn
 from ledger.journal import REASON_MAX, THESIS_MAX, JournalError, correct_entry, list_entries, log_entry, open_positions
-from ledger.scoring import score_journal
+from ledger.scoring import combine, score_journal
 
 router = APIRouter(prefix="/api", tags=["journal"])
 
@@ -66,6 +66,27 @@ class Score(BaseModel):
     spy_return: float | None
     vs_qqq: float | None
     vs_spy: float | None
+    # ADR 0027: beta from daily returns on QQQ's; market_part = beta x qqq_return; alpha the rest.
+    fit: Literal["ok", "too_early"] | None
+    days: int
+    beta: float | None
+    r_squared: float | None
+    market_part: float | None
+    alpha: float | None
+
+
+class Combined(BaseModel):
+    """Every scored entry in the response together; each counts once (ADR 0027)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    scored: int
+    fitted: int
+    too_early: int
+    alpha_of_calls: float | None
+    calls_right: int
+    beta_of_holdings: float | None
+    holdings_days: int
 
 
 class Entry(BaseModel):
@@ -93,6 +114,7 @@ class Entry(BaseModel):
 class Journal(BaseModel):
     entries: list[Entry]
     open_positions: list[str]
+    combined: Combined
 
 
 class NewEntry(BaseModel):
@@ -120,21 +142,23 @@ def _symbol(raw: str) -> str:
     return symbol
 
 
-def _scored(conn, entries) -> list[Entry]:
-    """Entries with their scores, from the bars stored before now (ground rule 2)."""
+def _scored(conn, entries) -> tuple[list[Entry], Combined]:
+    """Entries with their scores, from the bars stored before now (ground rule 2), and all together."""
     scores = score_journal(conn, entries, datetime.now(UTC))
-    return [
+    scored = [
         Entry.model_validate(e).model_copy(
             update={"score": Score.model_validate(scores[e.id]) if e.id in scores else None}
         )
         for e in entries
     ]
+    return scored, Combined.model_validate(combine(entries, scores))
 
 
 def _entry(conn, entry_id: int) -> Entry:
     [entry] = list_entries(conn, entry_id=entry_id)
     # A score can depend on the ticker's other entries (a Closed ends an Opened).
-    return next(e for e in _scored(conn, list_entries(conn, symbol=entry.symbol)) if e.id == entry_id)
+    scored, _ = _scored(conn, list_entries(conn, symbol=entry.symbol))
+    return next(e for e in scored if e.id == entry_id)
 
 
 @router.get("/journal")
@@ -142,7 +166,8 @@ def get_journal(conn: DbConn, symbol: Annotated[str | None, Query()] = None) -> 
     """Every entry, newest first, withdrawn ones included; or one ticker's. Each counted entry carries
     its score, worked out from stored bars on each request (ADR 0026)."""
     entries = list_entries(conn, symbol=_symbol(symbol) if symbol else None)
-    return Journal(entries=_scored(conn, entries), open_positions=open_positions(conn))
+    scored, combined = _scored(conn, entries)
+    return Journal(entries=scored, open_positions=open_positions(conn), combined=combined)
 
 
 @router.post("/journal", status_code=201)

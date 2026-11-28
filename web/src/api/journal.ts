@@ -39,6 +39,29 @@ export type JournalScore = {
   spy_return: number | null;
   vs_qqq: number | null;
   vs_spy: number | null;
+  /** ADR 0027. too_early: fewer than 20 daily returns, so no beta or alpha. */
+  fit: "ok" | "too_early" | null;
+  days: number;
+  /** How much the stock moved per 1% move in QQQ. */
+  beta: number | null;
+  r_squared: number | null;
+  /** beta x QQQ's return: the part of the stock's return QQQ's moves explain. */
+  market_part: number | null;
+  /** The stock's return minus the market part. */
+  alpha: number | null;
+};
+
+/** Every scored entry together; each counts once (ADR 0027). */
+export type JournalCombined = {
+  scored: number;
+  fitted: number;
+  too_early: number;
+  /** Mean alpha, negated for Trimmed, Closed and Pass: above zero means the calls were right. */
+  alpha_of_calls: number | null;
+  calls_right: number;
+  /** One regression over every day of the fitted Opened and Added entries. */
+  beta_of_holdings: number | null;
+  holdings_days: number;
 };
 
 export type JournalEntry = {
@@ -64,7 +87,11 @@ export type JournalEntry = {
   score: JournalScore | null;
 };
 
-export type Journal = { entries: JournalEntry[]; open_positions: string[] };
+export type Journal = {
+  entries: JournalEntry[];
+  open_positions: string[];
+  combined: JournalCombined;
+};
 
 export type NewEntry = {
   symbol: string;
