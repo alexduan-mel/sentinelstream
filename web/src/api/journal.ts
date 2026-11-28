@@ -20,6 +20,27 @@ export type JournalCorrection = {
   recorded_by: string;
 };
 
+/** How an entry has done since, against QQQ and SPY (ADR 0026). Prices are in today's share basis. */
+export type JournalScore = {
+  /** waiting: no close to start from yet, or the trade day's prices haven't arrived. */
+  status: "scored" | "waiting";
+  start_date: string | null;
+  start_basis: "trade" | "next_close" | null;
+  start_price: number | null;
+  /** For an entry with a trade price: whether it fell inside that day's range. */
+  price_check: "ok" | "out_of_range" | null;
+  end_date: string | null;
+  end_price: number | null;
+  ends: "closed" | "latest" | null;
+  closed_by: number | null;
+  sessions: number;
+  stock_return: number | null;
+  qqq_return: number | null;
+  spy_return: number | null;
+  vs_qqq: number | null;
+  vs_spy: number | null;
+};
+
 export type JournalEntry = {
   id: number;
   symbol: string;
@@ -39,6 +60,8 @@ export type JournalEntry = {
   recorded_by: string;
   withdrawn: JournalCorrection | null;
   corrections: JournalCorrection[];
+  /** Null for a withdrawn entry. */
+  score: JournalScore | null;
 };
 
 export type Journal = { entries: JournalEntry[]; open_positions: string[] };

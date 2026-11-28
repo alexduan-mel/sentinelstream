@@ -21,6 +21,8 @@ NY = ZoneInfo("America/New_York")
 NVDA_CIK = "0001045810"
 NBIS_CIK = "0001513845"
 RESEARCH_DIR = Path(__file__).resolve().parent.parent / "research"
+# Journal scoring is research on the owner's own decisions, so it is held to the same rule (ADR 0026).
+SCORING = Path(__file__).resolve().parent.parent / "ledger" / "scoring.py"
 
 
 def _bar(conn, symbol: str, trading_date: date, close: str) -> None:
@@ -273,7 +275,7 @@ def _string_constants(path: Path) -> list[str]:
 def test_research_modules_do_not_read_fact_tables_directly():
     offenders = [
         f"{path.name}: {match.group(0)}"
-        for path in sorted(RESEARCH_DIR.rglob("*.py"))
+        for path in [*sorted(RESEARCH_DIR.rglob("*.py")), SCORING]
         if path.name != "asof.py"
         for text in _string_constants(path)
         for match in _DIRECT_READ.finditer(text)
