@@ -12,7 +12,16 @@ from collections.abc import Callable, Mapping
 
 from psycopg2.extensions import connection as Connection
 
-from ingestion import insider_datasets, market_8k, market_bars, onboarding, price_bars, sec_filings, splits
+from ingestion import (
+    insider_datasets,
+    market_8k,
+    market_bars,
+    onboarding,
+    price_bars,
+    sec_filings,
+    splits,
+    xbrl_refresh,
+)
 from orchestration.task_runs import RunResult, TaskRun
 from research import base_rates
 
@@ -27,4 +36,5 @@ HANDLERS: Mapping[str, Handler] = {
     price_bars.TASK_ID: price_bars.ingest_prices,
     sec_filings.TASK_ID: sec_filings.ingest_sec_filings,
     splits.TASK_ID: splits.ingest_splits,
+    xbrl_refresh.TASK_ID: xbrl_refresh.refresh_xbrl_facts,
 }
