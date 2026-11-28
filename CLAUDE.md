@@ -11,7 +11,7 @@ M4 keeps an honest record of the owner's own decisions and measures each one aga
 - [x] Decision ledger: log an entry for a watchlist ticker with its action and thesis, optionally the alert it came from, and for a real trade its day, price and shares; the logging time is the server's, never typed in; entries are never edited, only corrected or withdrawn by a later row that keeps the original visible (ADR 0025)
 - [x] Journal page listing every entry with its thesis, source alert and corrections, and "Log a decision" on Alert detail
 - [x] Each entry scored from its trade price, or without one from the first daily close after it was logged, never a price already known then (tests prove it): the stock's return, QQQ's over the same days and SPY's for reference. Opened and Added run until the position's Closed entry; every other entry until the latest close. Scores are worked out from stored bars on each request, so they are always current without a scheduled task (ADR 0026)
-- [ ] Alpha and beta for each entry, from a regression of its daily returns on QQQ's since entry ("too early" under 20 trading days), and for all entries together (ADR 0027)
+- [x] Alpha and beta for each entry, from a regression of its daily returns on QQQ's since entry ("too early" under 20 trading days), and for all entries together (ADR 0027)
 - [ ] Journal page shows each entry's return against QQQ, its alpha and beta, the record of calls and the my-money view, in plain words and with no buy or sell language (ground rule 7)
 
 Next after M4 is the optional **AWS stage 2** (see `docs/PRD.md`).
