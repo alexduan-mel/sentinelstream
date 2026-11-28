@@ -24,6 +24,8 @@ import { FILER_TYPE_LABEL } from "../api/instruments";
 import { Hint } from "../components/AlertCells";
 import { HelpTitle } from "../components/HelpTitle";
 import { LoadError } from "../components/LoadError";
+import { TenKChanges } from "../components/TenKChanges";
+import type { TenKItem } from "../api/tenkChanges";
 import { PageTitle, SectionTitle } from "../components/PageTitle";
 import { EMPTY } from "../components/Timestamp";
 
@@ -165,6 +167,15 @@ export function TickerPage() {
     setSearch(next, { replace: true });
   };
 
+  // Which 10-K section's changes are shown: risk factors by default, MD&A with ?item=7.
+  const tenkItem: TenKItem = search.get("item") === "7" ? "7" : "1A";
+  const setTenKItem = (value: TenKItem) => {
+    const next = new URLSearchParams(search);
+    if (value === "7") next.set("item", "7");
+    else next.delete("item");
+    setSearch(next, { replace: true });
+  };
+
   const data = state.data;
   const foreign = data?.filer_type === "foreign_private";
   const shown: Basis = data?.basis ?? requested;
@@ -234,6 +245,10 @@ export function TickerPage() {
             figure and how it was worked out.{" "}
             <Link to="/glossary#company-financials">Glossary</Link>
           </Typography.Text>
+
+          <div className="pt-16">
+            <TenKChanges symbol={upper} item={tenkItem} onItemChange={setTenKItem} />
+          </div>
         </>
       )}
     </Space>
