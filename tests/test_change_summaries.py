@@ -5,16 +5,22 @@ No test calls the Claude API.
 
 from __future__ import annotations
 
+import json
+
+import anthropic
+import httpx2
 import pytest
 
 from filings.change_summaries import (
     PROMPT_VERSION,
     ChangeText,
     Point,
+    RetryLater,
     SummaryConfigurationError,
     Written,
     changes_prompt,
     check_point,
+    claude_writer,
     summarize_10k_changes,
 )
 from tests.test_onboarding import _count, _run
@@ -169,11 +175,11 @@ def test_all_points_rejected_or_refused_shows_nothing(connect_app_db) -> None:
     assert _summaries(conn)[0][:2] == ("1A", "refused")
 
 
-def test_an_api_error_leaves_the_diff_due(connect_app_db) -> None:
+def test_a_free_failure_leaves_the_diff_due(connect_app_db) -> None:
     conn = connect_app_db()
     _prepared(conn)
 
-    failed = _summarize(conn, FakeWriter(RuntimeError("overloaded")))
+    failed = _summarize(conn, FakeWriter(RetryLater("overloaded")))
     assert failed.status == "partial"  # Item 7 was still recorded as having no changes
     assert failed.error_message == f"NVDA {TEN_K_2026} Item 1A: overloaded"
     assert _count(conn, "SELECT COUNT(*) FROM filing_change_summaries WHERE item = '1A'") == 0
@@ -200,3 +206,76 @@ def test_a_new_diff_is_summarized_again(connect_app_db) -> None:
 
     assert _count(conn, "SELECT COUNT(*) FROM filing_change_summaries") == 0
     assert len(_summarize(conn, FakeWriter(Written(points=[], model="m"))).meta["summaries"]) == 2
+
+
+def test_a_failure_that_may_have_been_billed_is_stored_and_not_retried(connect_app_db) -> None:
+    conn = connect_app_db()
+    _prepared(conn)
+
+    result = _summarize(conn, FakeWriter(ValueError("the answer was cut off at max_tokens")))
+
+    assert result.status == "partial"
+    assert result.error_message == f"NVDA {TEN_K_2026} Item 1A: summary failed (ValueError)"
+    [(item, status, *_rest, rejections)] = [row for row in _summaries(conn) if row[0] == "1A"]
+    assert (item, status) == ("1A", "failed")
+    assert rejections == ["ValueError: the answer was cut off at max_tokens"]
+    assert _summarize(conn, FakeWriter()).meta == {"message": "nothing_due"}  # no hourly retry
+
+    retried = _summarize(conn, FakeWriter(Written(points=[], model="m")), force=True)
+    assert retried.meta["summaries"][f"NVDA {TEN_K_2026} Item 1A"]["status"] == "ok"
+
+
+# --- the real SDK client against canned HTTP answers -----------------------------------------------
+
+
+def _writer(monkeypatch, status: int, body: dict):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    transport = httpx2.MockTransport(lambda request: httpx2.Response(status, json=body))
+    client = anthropic.Anthropic(
+        api_key="test-key", max_retries=0, http_client=anthropic.DefaultHttpxClient(transport=transport)
+    )
+    return claude_writer(client)
+
+
+def _message(stop_reason: str, text: str) -> dict:
+    return {
+        "id": "msg_1", "type": "message", "role": "assistant", "model": "claude-opus-5-5",
+        "content": [{"type": "text", "text": text}], "stop_reason": stop_reason, "stop_sequence": None,
+        "usage": {"input_tokens": 900, "output_tokens": 60},
+    }  # fmt: skip
+
+
+def _error(kind: str, message: str) -> dict:
+    return {"type": "error", "error": {"type": kind, "message": message}}
+
+
+def test_the_sdk_answer_becomes_points(monkeypatch) -> None:
+    answer = {"points": [{"text": "A new export risk.", "change_ids": [3]}]}
+    written = _writer(monkeypatch, 200, _message("end_turn", json.dumps(answer)))("prompt")
+
+    assert written.points == [Point(text="A new export risk.", change_ids=[3])]
+    assert (written.model, written.input_tokens, written.output_tokens) == ("claude-opus-5-5", 900, 60)
+
+
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [
+        (529, _error("overloaded_error", "Overloaded")),
+        (500, _error("api_error", "Internal server error")),
+        (429, _error("rate_limit_error", "Monthly spend cap reached")),
+        (400, _error("invalid_request_error", "You have reached your specified API usage limits.")),
+    ],
+)
+def test_failures_that_cost_nothing_are_retried_later(monkeypatch, status: int, body: dict) -> None:
+    with pytest.raises(RetryLater):
+        _writer(monkeypatch, status, body)("prompt")
+
+
+def test_other_failures_are_not_retried(monkeypatch) -> None:
+    with pytest.raises(anthropic.BadRequestError):
+        _writer(monkeypatch, 400, _error("invalid_request_error", "messages: too long"))("prompt")
+    # An answer cut off mid-way was billed: whatever fails on it (the SDK's schema check here) is
+    # not a RetryLater, so the task stores it as failed instead of paying for it again every hour.
+    with pytest.raises(Exception) as cut_off:
+        _writer(monkeypatch, 200, _message("max_tokens", '{"points": [{"text": "A new'))("prompt")
+    assert not isinstance(cut_off.value, RetryLater)

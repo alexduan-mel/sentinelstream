@@ -16,6 +16,11 @@ Accepted points are stored with their change numbers; each change carries its ac
 item and paragraph numbers, so every point resolves to sections of the two 10-Ks. A summary whose
 points were all rejected is stored as rejected, with nothing to show, and makes the run ``partial``.
 
+A failure that cost nothing (network, rate limit, overload, a spend limit reached) leaves the diff due
+for the next run. Any other failure, such as an answer cut off or not matching the schema, may have
+been billed, so it is stored as ``failed`` and not retried every hour: a billed failure can never
+repeat hourly.
+
 ``known_at`` is when the summary was written, not when the 10-K was accepted: research reading as of
 an earlier date must not see it. The task calls the Claude API, not SEC, and can take a minute, so it
 runs on the research queue and never holds up the SEC poll. ``ANTHROPIC_API_KEY`` must be set; the
@@ -158,6 +163,12 @@ class SummaryConfigurationError(RuntimeError):
     pass
 
 
+class RetryLater(RuntimeError):
+    """A failure that cost nothing (network, rate limit, overload, a spend limit reached): the diff
+    stays due and the next run tries again. Any other failure may have been billed, so it is stored
+    as ``failed`` and not retried until the prompt version changes or a run is forced."""
+
+
 @dataclass
 class Written:
     points: list[Point]
@@ -171,18 +182,43 @@ class Written:
 Writer = Callable[[str], Written]
 
 
-def claude_writer() -> Writer:
-    """Calls Claude with the changes and returns its schema-validated points."""
+def claude_writer(client: Any = None) -> Writer:
+    """Calls Claude with the changes and returns its schema-validated points. ``client`` is for tests."""
     if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
         raise SummaryConfigurationError(
             "ANTHROPIC_API_KEY is not set; add it to Parameter Store (/sentinelstream/ANTHROPIC_API_KEY) and redeploy"
         )
     import anthropic  # imported here so the rest of the app never needs the SDK
 
-    client = anthropic.Anthropic()
+    client = client or anthropic.Anthropic(max_retries=2)
 
     def write(prompt: str) -> Written:
-        response = client.beta.messages.parse(
+        try:
+            response = _parse(prompt)
+        except (anthropic.APIConnectionError, anthropic.RateLimitError, anthropic.InternalServerError) as exc:
+            raise RetryLater(str(exc)) from exc
+        except anthropic.APIStatusError as exc:
+            # Over the organisation's or workspace's own spend limit: free to retry, resumes next month.
+            if exc.status_code >= 500 or "usage limits" in str(exc):
+                raise RetryLater(str(exc)) from exc
+            raise
+        refused = response.stop_reason == "refusal"
+        if not refused and response.stop_reason == "max_tokens":
+            raise ValueError("the answer was cut off at max_tokens")
+        parsed = None if refused else response.parsed_output
+        if not refused and parsed is None:
+            raise ValueError(f"no parsable answer (stop_reason {response.stop_reason})")
+        return Written(
+            points=list(parsed.points) if parsed else [],
+            model=response.model,
+            request_id=getattr(response, "_request_id", None),
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            refused=refused,
+        )
+
+    def _parse(prompt: str):
+        return client.beta.messages.parse(
             model=MODEL,
             max_tokens=16000,
             system=SYSTEM,
@@ -192,16 +228,6 @@ def claude_writer() -> Writer:
             # On a policy decline, the API re-runs the request on a fallback model it picks.
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
-        )
-        refused = response.stop_reason == "refusal"
-        parsed = None if refused else response.parsed_output
-        return Written(
-            points=list(parsed.points) if parsed else [],
-            model=response.model,
-            request_id=getattr(response, "_request_id", None),
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-            refused=refused,
         )
 
     return write
@@ -307,7 +333,11 @@ def store_summary(
     changes_read: int,
     task_run_id: int,
     now: datetime,
+    error: str | None = None,
 ) -> None:
+    rejections = [f"{reason}: {point.text[:200]}" for point, reason in outcome.rejected]
+    if error:
+        rejections.append(error[:500])
     with conn.cursor() as cursor:
         cursor.execute(
             "DELETE FROM filing_change_summaries WHERE new_accession_no = %s AND item = %s",
@@ -329,7 +359,7 @@ def store_summary(
                 changes_read,
                 len(outcome.accepted),
                 len(outcome.rejected),
-                [f"{reason}: {point.text[:200]}" for point, reason in outcome.rejected],
+                rejections,
                 written.request_id if written else None,
                 written.input_tokens if written else 0,
                 written.output_tokens if written else 0,
@@ -374,8 +404,17 @@ def summarize_10k_changes(
             continue
         try:
             written = write(changes_prompt(diff.symbol, diff.item, changes))
-        except Exception as exc:  # an API error leaves the diff due for the next run
+        except RetryLater as exc:
             meta["errors"].append(f"{label}: {exc}")
+            LOGGER.warning("tenk_summary_retry_later %s error=%s", label, exc)
+            continue
+        except Exception as exc:  # possibly billed: record it, so it is not retried every hour
+            store_summary(
+                conn, diff, status="failed", outcome=Outcome(), written=None, changes_read=len(changes),
+                task_run_id=run.id, now=now or datetime.now(UTC), error=f"{type(exc).__name__}: {exc}",
+            )  # fmt: skip
+            meta["summaries"][label] = {"status": "failed", "error": str(exc)[:300]}
+            problems.append(f"{label}: summary failed ({type(exc).__name__})")
             LOGGER.warning("tenk_summary_failed %s error=%s", label, exc)
             continue
         outcome = check(written.points, changes)

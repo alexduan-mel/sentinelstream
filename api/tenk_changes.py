@@ -75,9 +75,9 @@ class SummaryPoint(BaseModel):
 
 
 class ChangeSummary(BaseModel):
-    # ok: points passed every check (none means nothing significant changed); rejected / refused:
-    # nothing to show; no_changes: only figures or dates changed (ADR 0024).
-    status: Literal["ok", "rejected", "refused", "no_changes"]
+    # ok: points passed every check (none means nothing significant changed); rejected / refused /
+    # failed: nothing to show; no_changes: only figures or dates changed (ADR 0024).
+    status: Literal["ok", "rejected", "refused", "no_changes", "failed"]
     model: str | None
     written_at: datetime
     points: list[SummaryPoint]
