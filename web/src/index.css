@@ -41,3 +41,25 @@ a {
 .ant-table-wrapper .ant-table-cell {
   vertical-align: top;
 }
+
+/* The Alerts reading pane slides in from the right as it opens. */
+@keyframes sentinel-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.sentinel-slide-in {
+  animation: sentinel-slide-in 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sentinel-slide-in {
+    animation: none;
+  }
+}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Descriptions, Space, Table, Tag, Typography, type TableColumnsType } from "antd";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 import { errorMessage } from "../api/client";
 import {
@@ -145,37 +145,63 @@ const transactionColumns: TableColumnsType<Form4Transaction> = [
   }
 ];
 
-/** One filing: what it is, why it was or was not pushed, how fast, and its Form 4 rows (DESIGN.md). */
-export function AlertDetailPage() {
-  const { accessionNo = "" } = useParams();
-  const location = useLocation();
+/** Details already loaded this session, so stepping back to one is instant. */
+const detailCache = new Map<string, FilingDetail>();
+
+/** Forget cached details (tests, and the list's Refresh, which may change delivery status). */
+export function clearDetailCache(): void {
+  detailCache.clear();
+}
+
+/**
+ * One filing: what it is, why it was or was not pushed, how fast, and its Form 4 rows (DESIGN.md).
+ * Shown in the Alerts page's reading pane; ``toolbar`` holds the pane's Newer, Older and close.
+ */
+export function AlertDetail({
+  accessionNo,
+  toolbar
+}: {
+  accessionNo: string;
+  toolbar?: React.ReactNode;
+}) {
   const [state, setState] = useState<{
     data: FilingDetail | null;
     loading: boolean;
     error: string | null;
-  }>({ data: null, loading: true, error: null });
+  }>(() => {
+    const cached = detailCache.get(accessionNo);
+    return { data: cached ?? null, loading: !cached, error: null };
+  });
 
-  const load = useCallback(async () => {
-    setState({ data: null, loading: true, error: null });
-    try {
-      setState({ data: await getFiling(accessionNo), loading: false, error: null });
-    } catch (error) {
-      setState({ data: null, loading: false, error: errorMessage(error) });
-    }
-  }, [accessionNo]);
+  const load = useCallback(
+    async (force = false) => {
+      const cached = force ? undefined : detailCache.get(accessionNo);
+      if (cached) {
+        setState({ data: cached, loading: false, error: null });
+        return;
+      }
+      setState({ data: null, loading: true, error: null });
+      try {
+        const data = await getFiling(accessionNo);
+        detailCache.set(accessionNo, data);
+        setState({ data, loading: false, error: null });
+      } catch (error) {
+        setState({ data: null, loading: false, error: errorMessage(error) });
+      }
+    },
+    [accessionNo]
+  );
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  // Back to the list as it was: its filters travel in the address (see AlertsPage).
-  const fromSearch = (location.state as { fromSearch?: string } | null)?.fromSearch ?? "";
-  const back = <Link to={`/${fromSearch}`}>← Alerts</Link>;
+  const bar = toolbar ? <div className="flex justify-end">{toolbar}</div> : null;
   if (state.error) {
     return (
       <Space orientation="vertical" size={16} className="w-full">
-        {back}
-        <LoadError message={state.error} onRetry={() => void load()} />
+        {bar}
+        <LoadError message={state.error} onRetry={() => void load(true)} />
       </Space>
     );
   }
@@ -183,7 +209,7 @@ export function AlertDetailPage() {
   if (!filing) {
     return (
       <Space orientation="vertical" size={16} className="w-full">
-        {back}
+        {bar}
         <Muted>Loading…</Muted>
       </Space>
     );
@@ -196,15 +222,16 @@ export function AlertDetailPage() {
 
   return (
     <Space orientation="vertical" size={16} className="w-full">
-      {back}
-
-      <Space orientation="vertical" size={4}>
-        <Space size={12} align="center">
-          <Typography.Title level={1} className="!m-0 !text-page-title">
-            {title}
-          </Typography.Title>
-          <MaterialityTag filing={filing} />
-        </Space>
+      <Space orientation="vertical" size={4} className="w-full">
+        <div className="flex flex-wrap items-start justify-between gap-8">
+          <Space size={12} align="center">
+            <Typography.Title level={2} className="!m-0 !text-page-title">
+              {title}
+            </Typography.Title>
+            <MaterialityTag filing={filing} />
+          </Space>
+          {toolbar}
+        </div>
         {items.map((label) => (
           <div key={label}>{label}</div>
         ))}

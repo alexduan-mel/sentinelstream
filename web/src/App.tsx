@@ -2,7 +2,6 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AuthProvider } from "./auth/AuthContext";
 import { RequireAuth } from "./auth/RequireAuth";
-import { AlertDetailPage } from "./pages/AlertDetailPage";
 import { AlertsPage } from "./pages/AlertsPage";
 import { GlossaryPage } from "./pages/GlossaryPage";
 import { JournalPage } from "./pages/JournalPage";
@@ -18,8 +17,11 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<RequireAuth />}>
-          <Route path="/" element={<AlertsPage />} />
-          <Route path="/alerts/:accessionNo" element={<AlertDetailPage />} />
+          {/* One page for the list and an open filing, so the list stays loaded while one is read. */}
+          <Route element={<AlertsPage />}>
+            <Route path="/" element={null} />
+            <Route path="/alerts/:accessionNo" element={null} />
+          </Route>
           <Route path="/watchlist" element={<WatchlistPage />} />
           <Route path="/watchlist/:symbol" element={<TickerPage />} />
           <Route path="/journal" element={<JournalPage />} />

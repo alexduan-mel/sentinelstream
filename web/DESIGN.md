@@ -83,10 +83,23 @@ Built in M1 except Alert detail. Item shows each 8-K item number with its title 
 Data: `filings` plus the M1 materiality and notification records.
 
 - One table, newest first: Accepted · Ticker · Form · Item (e.g. "Item 5.02 · Departure of directors or officers", "Open-market purchase · 12,400 sh") · Materiality (`High` amber, `Low` neutral) · Pushed (Slack time, or "—") · "SEC ↗" link to the filing.
-- One filter row: ticker multi-select, materiality Segmented (All / High / Low), form type select, date range. On the right of the same row, muted text: "Polls every 5 min · next in 3 min".
+- One filter row: ticker multi-select, materiality Segmented (All / High / Low), form type select, date range.
 - High means materiality rules v0 only: 8-K items 1.01, 2.02, 4.02 and 5.02, and Form 4 open-market purchases (code P). Everything else is Low.
-- Each row ends with a **Details** link (opens Alert detail) and "SEC ↗" (opens EDGAR); clicking anywhere else on the row opens Alert detail too, unless text is being selected. Alert detail is a full page, not a side panel: its Form 4 and base-rate tables need the width.
-- The filters live in the address (`/?ticker=NVDA&materiality=high&page=2`), and a filter change replaces it rather than adding a history step. So "← Alerts", the browser's Back button and bookmarks all return to the same filtered list, at the same scroll position. No model-written summaries in M1.
+- Each row ends with a **Details** link (opens Alert detail) and "SEC ↗" (opens EDGAR); clicking anywhere else on the row opens Alert detail too, unless text is being selected.
+- The filters live in the address (`/?ticker=NVDA&materiality=high&page=2`), and a filter change replaces it rather than adding a history step, so Back and bookmarks return to the same filtered list. No model-written summaries in M1.
+- **Freshness, on the title row's right:** the poll line ("Polls every 5 min · last ran 2m ago · next in 3m", re-read every minute), "Updated 4m ago" for the list shown, and a **Refresh** button. A list once loaded is kept in memory for the session, so returning to it (from an alert, or from another tab) shows it at once, as it was. It changes only on Refresh. Each minute a quiet check asks whether newer filings match the filters; if so, an info line says "3 new filings since this list was loaded" with **Show** (back to page 1, reloaded). The table never reorders on its own while it is being read.
+
+### Alert detail (`/alerts/:accession`, reading pane)
+
+Opening a filing slides its detail in from the right while the list narrows to a 220px column beside it, on the same page: the list is never reloaded or scrolled away. The address becomes `/alerts/<accession>` with the list's filters kept (`?materiality=high`), so a link from Slack, the Journal or a bookmark opens the same view. The Alerts tab stays selected.
+
+- **The narrow column:** one row per filing on the page, two lines: "NVDA · 8-K" (with "High" in amber when it is) and the accepted time. The open filing is marked with the accent rule and kept in view. Clicking a row opens it. Under the rows, "1–50 of 4,665". While open, the filter row collapses to one muted line ("Filtered: NVDA · High").
+- **Moving:** ↑ and ↓ (or **‹ Newer** and **Older ›** in the pane's toolbar) open the next filing up or down; past the end of a page they load the next or previous page and open its first or last filing. Arrow keys are left alone while a text field, select or date picker has focus. Moving replaces the address, so Back closes the pane rather than stepping back through each filing.
+- **Closing:** × in the toolbar, Esc, or browser Back. The full table returns as it was, at the same scroll position. A muted "↑ ↓ to move · Esc to close" sits by the toolbar on wide screens.
+- The column and the pane scroll separately and fill the window's height. Below 768px wide there is no room for both: the pane takes the screen, with "← Alerts" above it.
+- Details already opened this session are kept in memory, so stepping back to one is instant; Refresh forgets them.
+
+The pane's content:
 
 ### Watchlist (`/watchlist`, M1)
 
@@ -98,11 +111,7 @@ Data: `instruments` with their onboarding status (ADR 0010), newest filing and p
 - No per-step progress: `instruments` records the status, not the step in progress, and a ticker takes seconds. The page refreshes every 5 seconds while any ticker is pending or backfilling.
 - **Benchmarks** table (QQQ, SPY): Ticker · Name (from Massive; an ETF has no SEC issuer) · Price history (status, then "501 daily bars · Nov 26, 2024 – Nov 25, 2026"). Benchmarks cannot be removed.
 
-### Alert detail (`/alerts/:accession`, M1)
-
-Opened by clicking a row on Alerts (the "SEC ↗" link still opens EDGAR). The Alerts tab stays selected.
-
-- "← Alerts" back link, then the header: tickers and form ("AMZN · Form 4"), the materiality tag, each 8-K item with its title or the shares bought, and for a high filing "Flagged:" with the rule that matched.
+- The header: tickers and form ("AMZN · Form 4"), the materiality tag, each 8-K item with its title or the shares bought, and for a high filing "Flagged:" with the rule that matched.
 - An Ant Design `Descriptions` block: accepted by EDGAR, pushed to Slack (time, Queued or Skipped, with the reason on hover), first seen by the poller, detection delay (`first_seen_at - accepted_at`; "History" for filings loaded as history, where the gap says nothing about polling), acceptance to Slack (the M1 10-minute target), Slack attempts, accession number (mono, copyable), filer CIK, filing date, period of report, primary document and the filing index (links to SEC).
 - **Companies it is listed under**: one row per linked issuer with its own materiality, the rule's reason, whether it was news or history for that issuer, and when it was first seen.
 - **Form 4 transactions** (only when stored): reporting owner and role, security, date, code with SEC's meaning ("P · Open-market or private purchase"), shares (+ acquired, − disposed), price, shares owned after, direct or indirect.
