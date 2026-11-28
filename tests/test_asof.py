@@ -214,6 +214,20 @@ def test_a_restated_value_replaces_the_original_only_once_public(connect_app_db)
     assert [f.form for f in reader.xbrl_facts(NVDA_CIK, "Revenues")] == ["10-Q", "10-K"]
 
 
+def test_several_concepts_are_read_at_once_with_their_filing_labels(connect_app_db):
+    conn = connect_app_db()
+    filed = datetime(2026, 5, 28, 20, 30, tzinfo=UTC)
+    _xbrl(conn, "0001045810-26-000050", 44_062_000_000, filed, form="10-Q")
+    with conn.cursor() as cursor:
+        cursor.execute("UPDATE xbrl_facts SET fiscal_year = 2027, fiscal_period = 'Q1'")
+    conn.commit()
+
+    [fact] = AsOf(conn, filed + timedelta(seconds=1)).xbrl_facts(NVDA_CIK, "Revenues", "NetIncomeLoss")
+    assert (fact.concept, fact.fiscal_year, fact.fiscal_period) == ("Revenues", 2027, "Q1")
+    with pytest.raises(ValueError, match="at least one concept"):
+        AsOf(conn, filed).xbrl_facts(NVDA_CIK)
+
+
 # --- every reader, every moment -------------------------------------------------------------------
 
 
@@ -238,6 +252,7 @@ def test_no_reader_ever_returns_a_row_known_at_or_after_as_of(connect_app_db):
             + [r.known_at for r in reader.form4_transactions()]
             + [x.known_at for x in reader.xbrl_facts(NVDA_CIK, "Revenues")]
             + [x.known_at for x in reader.latest_xbrl_values(NVDA_CIK, "Revenues")]
+            + [x.known_at for x in reader.xbrl_facts(NVDA_CIK, "Revenues", "NetIncomeLoss", "GrossProfit")]
         )
         assert all(k < as_of for k in known), as_of
 
