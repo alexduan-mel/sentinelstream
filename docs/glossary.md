@@ -435,6 +435,40 @@ SEC files every company under a four-digit Standard Industrial Classification co
 
 **See also:** Pooling
 
+## Journal
+
+### Journal entry
+One decision of yours, written down when you made it: the ticker, what you did, your thesis and, if it came from one, the alert. The time is the server's, never typed in. Entries are never edited, so the Journal stays an honest record of what you thought at the time.
+
+**Example:** "Nov 28 · NVDA · Opened · from the 8-K of Nov 19 · Data-centre demand holds."
+
+**See also:** Thesis; Opened, Added, Trimmed and Closed; Correction and withdrawal
+
+### Thesis
+Your reason for a decision, in your own words, as you saw it then. Reading it later shows whether the reason held, not just whether the price went up.
+
+**See also:** Journal entry
+
+### Opened, Added, Trimmed and Closed
+What you did with a position (the shares you hold in one company). **Opened** starts one, **Added** buys more, **Trimmed** sells part and keeps some, and **Closed** sells all of it. They have to come in that order: you can't add to or close a position the Journal has no Opened for.
+
+**See also:** Pass; Trade price
+
+### Pass
+A decision not to act: you looked at the company or alert and chose to do nothing. It is logged and measured like any other entry, so you can see later what not acting cost or saved.
+
+**See also:** Opened, Added, Trimmed and Closed
+
+### Trade price
+The day and price per share a real trade was done at, entered with an entry if you want. It is checked against that day's low and high, with 1% leeway for trades just before the open or after the close. Enter it as traded: a later split is accounted for. Without one, an entry is measured from the first close after it was logged, so it never gets credit for a price that was already known.
+
+**See also:** Close; Split and split-adjusted; Lookahead
+
+### Correction and withdrawal
+How a Journal entry is fixed without being edited. A **correction** gives a new thesis or alert link with a reason, and the original stays visible above it. A **withdrawal** takes an entry out of the record with a reason, but it stays listed, marked Withdrawn. The action, ticker, trade and time can't be corrected: withdraw the entry and log it again.
+
+**See also:** Journal entry
+
 ## The app
 
 ### Watchlist

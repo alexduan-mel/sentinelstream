@@ -9,6 +9,7 @@ import { useTimeZone, type ZoneChoice } from "../lib/timeZone";
 export const NAV_ITEMS = [
   { key: "/", label: "Alerts" },
   { key: "/watchlist", label: "Watchlist" },
+  { key: "/journal", label: "Journal" },
   { key: "/tasks", label: "Tasks" },
   { key: "/glossary", label: "Glossary" }
 ];

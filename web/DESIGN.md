@@ -54,7 +54,7 @@ Nothing is smaller than 12px.
 
 ## Layout
 
-- **Top bar** (48px, full width, bottom border): the text wordmark "SentinelStream" on the left; nav tabs **Alerts, Watchlist, Tasks, Glossary**, with a 2px underline on the active tab; on the right, a user menu showing the username, with "Sign out". Left of the user menu, a small ET | AEDT toggle for the time zone (hidden when the browser's own zone is US Eastern). Nothing else goes in the top bar.
+- **Top bar** (48px, full width, bottom border): the text wordmark "SentinelStream" on the left; nav tabs **Alerts, Watchlist, Journal, Tasks, Glossary**, with a 2px underline on the active tab; on the right, a user menu showing the username, with "Sign out". Left of the user menu, a small ET | AEDT toggle for the time zone (hidden when the browser's own zone is US Eastern). Nothing else goes in the top bar.
 - **Page**: a title row (title plus a muted count, e.g. "Alerts · 15"), an optional filter row, then content. Pages scroll normally. There are no docked panes, no command palette and no keyboard-shortcut bar.
 - **Times**: stored in UTC. Shown in US Eastern by default (`14:32 ET`), or in the browser's own zone (`14:32 AEDT`; AEST in winter, as Intl follows daylight saving) when the viewer picks it with the ET | AEDT toggle in the top bar. The choice is remembered per browser. Today: the clock time with a muted relative time (`8m ago`). Earlier: `Nov 23 14:32 ET`. Hovering a time shows the same moment in the other zone. Schedules tied to the US market keep ET ("Weekdays 18:30 ET"). The accepted-date filter uses calendar days in the zone shown. Durations: `3.4s`.
 - **States**: every data view has a loading state (Table `loading`), an empty state (one line of muted text, no illustration) and an error state (inline Ant Design `Alert` with a Retry button).
@@ -107,7 +107,7 @@ Opened by clicking a row on Alerts (the "SEC ↗" link still opens EDGAR). The A
 - **Companies it is listed under**: one row per linked issuer with its own materiality, the rule's reason, whether it was news or history for that issuer, and when it was first seen.
 - **Form 4 transactions** (only when stored): reporting owner and role, security, date, code with SEC's meaning ("P · Open-market or private purchase"), shares (+ acquired, − disposed), price, shares owned after, direct or indirect.
 - **What followed similar filings** (M2, high filings only), from `base_rates` in the detail API (ADR 0018): a Segmented toggle for the filter setting ("$5+ and $1M+ a day", the default, or "All stocks"); then for each high event, its label ("Insider open-market purchase", "8-K item 2.02 …"), a muted line saying which past filings the numbers are based on ("Based on past filings from companies in the same broad industry (SIC group 36, which includes …)" or "Based on past filings from all US-listed companies (fewer than 30 in this company's industry, so pooled)") and when they were calculated, and a table: After (1, 5, 20, 60 sessions) · Past filings · Average vs QQQ · Median vs QQQ · Beat QQQ · 95% range · vs SPY · Average cost. Returns are signed percentages, green above zero and red below; a range with too few months is a dash explained on hover; each header has an ⓘ in plain words. A muted footnote says the returns are after costs and minus QQQ's over the same days, so the market's own moves are taken out, and are what followed past filings, not a forecast, with a link to the glossary. A high filing with none yet says so in one muted line.
-- Under the header, "Key financials:" links each ticker to its ticker page (M3). "Log a decision" (M4) is added by that milestone, not shown as a placeholder.
+- Under the header, "Key financials:" links each ticker to its ticker page (M3), and "Log a decision:" links each ticker to the Log a decision page with this alert attached (M4).
 
 ### Glossary (`/glossary`)
 
@@ -139,6 +139,29 @@ Data: `GET /api/instruments/{symbol}/financials` (ADR 0020), from `xbrl_facts`.
   - Each change: a tag (Added green, Removed red, Changed neutral, with what it means on hover), the text (a changed paragraph word by word: struck-out words on a faint red, added words on a faint green), then a muted line with the paragraph number in each year, the share of words that stayed, and a link to the section in the 10-K it is in. Text is at most 880px wide; on a phone the tag sits above it.
   - No comparison: one muted line, saying a 20-F filer is not compared yet, or that two years of 10-Ks are needed.
   - A muted footnote: paragraphs are matched by wording, not by a model; figure tables are left out; a link to the glossary.
+
+### Journal (`/journal`, M4)
+
+The owner's own decisions (ADR 0025). Data: `GET /api/journal`.
+
+- Title "Journal · N", with a primary "Log a decision" button on the right. Under it, a ticker select (in the address, `?ticker=NVDA`, replacing rather than adding a history step) and a muted line naming the tickers with an open position ("Open positions: NVDA", or "No open positions").
+- One table, newest first: Logged (time) · Ticker (link to its ticker page) · Action (neutral tag with what it means on hover; a red "Withdrawn" tag beside it, with the reason on hover) · Thesis (up to three lines; "Corrected" in muted text when it was) · Trade ("Nov 20, 2026 · $185.25 · 12.5 sh"; "Next close" muted, explained on hover, when no trade was given; "Not a trade" for a Pass) · From alert ("8-K · Nov 19, 2026", linking to Alert detail) · a **Details** link.
+- Details expands the row: who logged it and when; **As first logged**, with the original thesis or alert, if a correction changed it; every correction with its time, who and the reason; then the actions "Correct the thesis", "Remove the alert link" (when linked) and "Withdraw". Each opens a small inline form that asks for a reason, says the original stays visible (or, for Withdraw, that the entry stays listed and stops counting), and shows a refusal inline. A withdrawn entry has no actions.
+- A muted footnote: the entries are your own decisions; each is logged at the server's time and never edited; a trade's price is checked against that day's prices; a link to the glossary's Journal topic.
+- Empty: "No decisions logged yet" (or "No entries for NVDA").
+- No buy or sell language beyond the action names, and no scores until the scoring boxes are built.
+
+### Log a decision (`/journal/new`, M4)
+
+Opened from "Log a decision" on Journal (`?ticker=` when filtered) or from Alert detail (`?ticker=NVDA&alert=<accession>`). The Journal tab stays selected. A single column, at most 640px wide.
+
+- "← Journal" (or "← Alert" when opened from one), then the title.
+- **Ticker:** a select of ready watchlist companies only, and a muted line saying whether it has an open position in the Journal.
+- **From alert** (only when opened from one): the form and items, linking back to the alert, its acceptance time, and "Don't link" (and "Link it again"). An alert filed for another ticker says it won't be linked.
+- **What you did:** Opened · Added · Trimmed · Closed · Pass as a button group. Actions the position doesn't allow are disabled, with why on hover. The chosen one's meaning is shown under it.
+- **Thesis:** a text area with a character count (4,000 at most).
+- **Trade details (optional)**, not for a Pass: trade day (future days and weekends disabled), price per share and shares, with a muted line saying they are as traded and checked against that day's low–high range (a trade today is checked after the close).
+- Errors, from the page or the API, appear inline above the buttons. "Log decision" (primary) and "Cancel"; a muted line says the entry is logged at that moment and can't be edited, only corrected or withdrawn, and that without a trade day and price it is measured from the first close after it. On success, the Journal opens filtered to the ticker.
 
 ## Reference screenshots
 

@@ -222,6 +222,22 @@ export function AlertDetailPage() {
             ))}
           </div>
         )}
+        {filing.tickers.length > 0 && (
+          <div>
+            <Muted>Log a decision: </Muted>
+            {filing.tickers.map((ticker, index) => (
+              <span key={ticker}>
+                {index > 0 && ", "}
+                <Link
+                  to={`/journal/new?ticker=${encodeURIComponent(ticker)}&alert=${filing.accession_no}`}
+                  aria-label={`Log a decision on ${ticker}`}
+                >
+                  {ticker}
+                </Link>
+              </span>
+            ))}
+          </div>
+        )}
       </Space>
 
       <Descriptions
