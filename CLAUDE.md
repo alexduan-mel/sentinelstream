@@ -4,20 +4,23 @@ SentinelStream (SS) is a personal research assistant for a long-horizon US stock
 
 Read `docs/PRD.md` for the full product spec and milestones. This file is the working agreement for anyone (human or agent) writing code here.
 
-## Current milestone: M2, evidence harness (14 Dec 2026 – 10 Jan 2027)
+## Current milestone: M3, explain (11 – 24 Jan 2027, started early on 28 Nov 2026)
 
-M2 gives every high alert a base rate: how stocks moved, compared with QQQ, after similar past events. It is done when every box is ticked:
+M3 explains a company from its own filings: key financials straight from XBRL, and what changed in the 10-K since last year, with every claim cited to a filing section. It is done when every box is ticked:
 
-- [x] As-of access layer: research code reads facts only through `research/asof.py`, which enforces `known_at < as_of`; tests prove lookahead is blocked (ADR 0011)
-- [x] Market-wide daily bars for every US stock, as traded, two years back, backfilled in chunks that never hold up the SEC poll, then updated daily (ADR 0012)
-- [x] Market-wide insider purchases (Form 4 code P) from SEC's Insider Transactions Data Sets (ADR 0014)
-- [x] Base-rate calculator: returns 1, 5, 20 and 60 sessions after an event, compared with QQQ (SPY shown), after 0.10% costs per trade, with sample size, median, average, hit rate and a confidence range (ADR 0015)
-- [x] Insider-buying effect reproduced: a write-up in `docs/` with the result, whichever way it comes out (`docs/research/insider-buying.md`)
-- [x] Market-wide 8-K item history (ADR 0017)
-- [x] A base rate on each high alert, on the Alert detail page and in Slack, pooled across similar stocks when the sample is small (ADR 0018)
-- [x] Split detection: a daily check of Massive's splits endpoint triggers a re-fetch (promised in ADR 0002); market-wide split data for research (ADR 0013)
+- [x] Key financials from XBRL: revenue, gross margin, operating income, net income, diluted EPS, cash, total debt, shares outstanding and free cash flow, by quarter and fiscal year; each company's tags mapped to one line item; every value linked to the filings it came from (ADR 0020)
+- [ ] XBRL facts kept current: a watchlist company's new 10-Q, 10-K or 20-F reaches `xbrl_facts` without re-onboarding
+- [ ] Ticker page: key financials for the last 8 quarters, with a fiscal-year toggle, each number linked to its filing
+- [ ] 10-K sections extracted for domestic filers: risk factors (Item 1A) and MD&A (Item 7), split into paragraphs, from the filing as accepted
+- [ ] Year-over-year 10-K diff: paragraphs added, removed and changed, stored with citations (accession number, section, paragraph)
+- [ ] 10-K changes on the ticker page, each linked to its section in the filing
+- [ ] Stretch: short LLM summaries of the changes, schema-validated, any claim without a citation rejected (ground rule 6)
 
-Next milestone after M2 is **M3: Explain** (see `docs/PRD.md`).
+NBIS files 20-F, not 10-K: it gets key financials (fiscal years only), and its text diff comes later. Next milestone after M3 is **M4: Journal** (see `docs/PRD.md`).
+
+### M2, evidence harness: done
+
+All eight boxes were ticked on 28 Nov 2026: the as-of layer (ADR 0011), market-wide bars (ADR 0012), splits (ADR 0013), insider purchases (ADR 0014), the base-rate calculator (ADR 0015), 8-K history (ADR 0017), base rates on high alerts (ADR 0018) and the insider-buying write-up (`docs/research/insider-buying.md`). ADR 0019 (alert-only worker, shared rate limits) is proposed; build it only once the owner says go.
 
 ### M1, alerts live: one box left
 
