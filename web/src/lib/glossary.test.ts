@@ -82,6 +82,7 @@ describe("docs/glossary.md", () => {
   it("parses, and every term has an explanation and a unique anchor", () => {
     expect(glossary.sections.map((section) => section.title)).toEqual([
       "SEC and filings",
+      "Company financials",
       "Alerts",
       "Prices and markets",
       "Research",

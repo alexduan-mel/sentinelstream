@@ -1,11 +1,20 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { priceHistoryLabel, type Instrument } from "../api/instruments";
 import { activeNavKey } from "../components/TopBar";
 import { installDomStubs } from "../test/dom";
 import { COLUMN_HELP, STATUS_HELP, STUCK_HELP, WatchlistPage } from "./WatchlistPage";
+
+function renderPage() {
+  return render(
+    <MemoryRouter>
+      <WatchlistPage />
+    </MemoryRouter>
+  );
+}
 
 beforeAll(installDomStubs);
 afterEach(() => {
@@ -108,7 +117,7 @@ describe("watchlist helpers", () => {
 describe("WatchlistPage", () => {
   it("lists tracked tickers with status, filer type and last filing, then benchmarks", async () => {
     mockApi([[nbis, nvda, xyzq, qqq]]);
-    render(<WatchlistPage />);
+    renderPage();
 
     const row = (await screen.findByText("NVIDIA CORP")).closest("tr") as HTMLElement;
     expect(within(row).getByText("Domestic")).toBeTruthy();
@@ -116,11 +125,16 @@ describe("WatchlistPage", () => {
     expect(within(row).getByText("Ready")).toBeTruthy();
     expect(within(row).getByText(/8-K ·/)).toBeTruthy();
     expect(within(row).queryByRole("button", { name: "Retry" })).toBeNull();
+    // A ticker SEC has tied to a company opens its ticker page; one it rejected is plain text.
+    expect(within(row).getByRole("link", { name: "NVDA" }).getAttribute("href")).toBe(
+      "/watchlist/NVDA"
+    );
 
     const failed = screen.getByText("XYZQ").closest("tr") as HTMLElement;
     expect(within(failed).getByText("Failed")).toBeTruthy();
     expect(within(failed).getByText("XYZQ is not in SEC's ticker map")).toBeTruthy();
     expect(within(failed).getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(within(failed).queryByRole("link", { name: "XYZQ" })).toBeNull();
 
     const stuck = screen.getByText("NBIS").closest("tr") as HTMLElement;
     expect(within(stuck).getByText("Backfilling")).toBeTruthy();
@@ -138,7 +152,7 @@ describe("WatchlistPage", () => {
 
   it("explains the columns and what each status means and leads to", async () => {
     mockApi([[nbis, nvda, xyzq, qqq]]);
-    render(<WatchlistPage />);
+    renderPage();
     await screen.findByText("NVIDIA CORP");
 
     fireEvent.mouseEnter(screen.getByLabelText("About CIK"));
@@ -165,7 +179,7 @@ describe("WatchlistPage", () => {
         body: { symbol: "MSFT", onboarding_status: "pending", run_id: 7 }
       }
     });
-    render(<WatchlistPage />);
+    renderPage();
     await screen.findByText("NVIDIA CORP");
 
     fireEvent.change(screen.getByLabelText("Ticker to add"), { target: { value: " msft " } });
@@ -185,7 +199,7 @@ describe("WatchlistPage", () => {
     const fetchMock = mockApi([[nvda]], {
       "POST /api/instruments": { status, body: { detail } }
     });
-    render(<WatchlistPage />);
+    renderPage();
     await screen.findByText("NVIDIA CORP");
 
     fireEvent.change(screen.getByLabelText("Ticker to add"), { target: { value: typed } });
@@ -203,7 +217,7 @@ describe("WatchlistPage", () => {
       },
       "DELETE /api/instruments/NVDA": { status: 204 }
     });
-    render(<WatchlistPage />);
+    renderPage();
     await screen.findByText("NVIDIA CORP");
 
     const failed = screen.getByText("XYZQ").closest("tr") as HTMLElement;
@@ -227,7 +241,7 @@ describe("WatchlistPage", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const pending: Instrument = { ...base, symbol: "MSFT" };
     const fetchMock = mockApi([[pending], [{ ...pending, onboarding_status: "ready" }]]);
-    render(<WatchlistPage />);
+    renderPage();
     await screen.findByText("Pending");
 
     await vi.advanceTimersByTimeAsync(5_000);
@@ -244,12 +258,12 @@ describe("WatchlistPage", () => {
           new Response(JSON.stringify({ detail: "database unavailable" }), { status: 503 })
       )
     );
-    render(<WatchlistPage />);
+    renderPage();
     expect(await screen.findByText("database unavailable")).toBeTruthy();
 
     cleanup();
     mockApi([[qqq]]);
-    render(<WatchlistPage />);
+    renderPage();
     expect(await screen.findByText("No tickers yet. Add one above.")).toBeTruthy();
   });
 });
