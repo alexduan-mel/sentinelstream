@@ -35,8 +35,8 @@ export type ChangeGroup = { heading: string | null; changes: ParagraphChange[] }
 
 /** Claude's points on what changed, each citing the changes it rests on (ADR 0024). */
 export type ChangeSummary = {
-  /** ok: points passed every check; rejected / refused: nothing to show; no_changes: only figures moved. */
-  status: "ok" | "rejected" | "refused" | "no_changes";
+  /** ok: points passed every check; rejected / refused / failed: nothing to show; no_changes: only figures moved. */
+  status: "ok" | "rejected" | "refused" | "no_changes" | "failed";
   model: string | null;
   written_at: string;
   points: { text: string; change_nos: number[] }[];

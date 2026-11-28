@@ -75,7 +75,9 @@ function SummaryBlock({ summary }: { summary: ChangeSummary }) {
       <Muted>
         {summary.status === "refused"
           ? "No summary: the model declined to summarize this section."
-          : "No summary: every point the model wrote failed the citation checks."}
+          : summary.status === "failed"
+            ? "No summary: the model's answer could not be read."
+            : "No summary: every point the model wrote failed the citation checks."}
       </Muted>
     );
   }
