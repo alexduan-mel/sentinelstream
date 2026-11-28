@@ -4,7 +4,8 @@
 #
 #   deploy.sh <image-uri> <aws-region>      e.g. deploy.sh 1234.dkr.ecr.us-east-1.amazonaws.com/sentinelstream:<sha> us-east-1
 #
-# Steps: ECR login → secrets from Parameter Store → compose pull/up → /healthz must report the new SHA.
+# Steps: ECR login → secrets from Parameter Store → prune old images → compose pull/up → /healthz must
+# report the new SHA → prune again, keeping only the new and the previous image.
 # Every app container (api, scheduler, worker, research-worker) applies pending migrations at start (image entrypoint),
 # and `up --wait` requires all of them to report healthy.
 # If the new version fails its health check, the previously deployed image is started again.
@@ -71,6 +72,21 @@ start() {
   compose up --detach --no-build --remove-orphans --wait --wait-timeout 120
 }
 
+prune_images() {
+  # Keep only the app images named in "$@" (the new and the previous version) and those any container
+  # uses; ECR keeps the last 30, so an older one can always be pulled again. The root disk is 12 GB and
+  # each image ~300 MB: on 28 Nov 2026, 54 kept images (a week's deploys) filled it and a pull failed.
+  local keep image
+  docker images --format '{{.Repository}}:{{.Tag}}' "${REGISTRY}/${PROJECT}" | while read -r image; do
+    for keep in "$@"; do
+      [[ -n "${keep}" && "${image}" == *":${keep}" ]] && continue 2
+    done
+    docker rmi "${image}" >/dev/null 2>&1 || true   # still used by a container: kept
+  done
+  docker image prune --force >/dev/null   # dangling layers
+  log "disk after pruning images: $(df -h --output=avail / | tail -1 | tr -d ' ') free"
+}
+
 healthy_version() {
   curl -fsS --max-time 5 http://127.0.0.1:8000/healthz |
     python3 -c 'import json, sys; print(json.load(sys.stdin)["version"])'
@@ -84,10 +100,11 @@ check_data_volume
 
 previous=""
 [[ -f "${DEPLOYED_FILE}" ]] && previous="$(cat "${DEPLOYED_FILE}")"
+prune_images "${TAG}" "${previous}"   # room for the pull
 
 if start "${IMAGE}" && [[ "$(healthy_version || true)" == "${TAG}" ]]; then
   echo "${TAG}" >"${DEPLOYED_FILE}"
-  docker image prune --all --force --filter "until=168h" >/dev/null
+  prune_images "${TAG}" "${previous}"
   log "deployed ${TAG}"
   exit 0
 fi
