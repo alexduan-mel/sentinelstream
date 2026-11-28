@@ -9,7 +9,7 @@ Read `docs/PRD.md` for the full product spec and milestones. This file is the wo
 M3 explains a company from its own filings: key financials straight from XBRL, and what changed in the 10-K since last year, with every claim cited to a filing section. It is done when every box is ticked:
 
 - [x] Key financials from XBRL: revenue, gross margin, operating income, net income, diluted EPS, cash, total debt, shares outstanding and free cash flow, by quarter and fiscal year; each company's tags mapped to one line item; every value linked to the filings it came from (ADR 0020)
-- [ ] XBRL facts kept current: a watchlist company's new 10-Q, 10-K or 20-F reaches `xbrl_facts` without re-onboarding
+- [x] XBRL facts kept current: a watchlist company's new 10-Q, 10-K or 20-F reaches `xbrl_facts` without re-onboarding (ADR 0021)
 - [ ] Ticker page: key financials for the last 8 quarters, with a fiscal-year toggle, each number linked to its filing
 - [ ] 10-K sections extracted for domestic filers: risk factors (Item 1A) and MD&A (Item 7), split into paragraphs, from the filing as accepted
 - [ ] Year-over-year 10-K diff: paragraphs added, removed and changed, stored with citations (accession number, section, paragraph)
