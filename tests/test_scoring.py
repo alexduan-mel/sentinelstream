@@ -3,14 +3,15 @@ it never starts from a price already known when it was logged (ground rule 2).""
 
 from __future__ import annotations
 
-from datetime import date, datetime, time
+import math
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
 
 from ingestion.market_calendar import NEW_YORK
 from ledger.journal import Correction, Entry
-from ledger.scoring import Series, score_entries, score_journal
+from ledger.scoring import Series, combine, fit, score_entries, score_journal
 from research.asof import Bar, Split
 
 # Mon 16 Nov to Fri 20 Nov 2026, then Mon 23 Nov.
@@ -216,3 +217,106 @@ def test_the_journal_api_carries_each_entrys_score(signed_in_client, stored_bars
     assert withdrawn["score"] is None
     entries = signed_in_client.get("/api/journal").json()["entries"]
     assert [e["score"] is None for e in entries] == [True, False]
+    journal = signed_in_client.get("/api/journal").json()
+    assert journal["combined"]["scored"] == 1 and journal["combined"]["too_early"] == 1
+    assert journal["entries"][1]["score"]["fit"] == "too_early"
+    assert "daily" not in journal["entries"][1]["score"]
+
+
+# --- Alpha and beta (ADR 0027) ---
+
+
+def _sessions(start: date, count: int) -> list[date]:
+    days, day = [], start
+    while len(days) < count:
+        if day.weekday() < 5:
+            days.append(day)
+        day += timedelta(days=1)
+    return days
+
+
+def _paths(qqq_daily: list[float], beta: float, extra: float) -> tuple[list[float], list[float]]:
+    """Closes for QQQ from its daily returns, and a stock whose daily return is beta x QQQ's + extra."""
+    qqq, stock = [500.0], [100.0]
+    for r in qqq_daily:
+        qqq.append(qqq[-1] * (1 + r))
+        stock.append(stock[-1] * (1 + beta * r + extra))
+    return stock, qqq
+
+
+QQQ_DAILY = [0.01, -0.008, 0.004, 0.012, -0.015, 0.003, 0.007, -0.002, 0.009, -0.011] * 3  # 30 days
+LONG = _sessions(date(2026, 9, 1), len(QQQ_DAILY) + 1)
+
+
+def long_series(beta: float = 1.5, extra: float = 0.001) -> dict[str, Series]:
+    stock, qqq = _paths(QQQ_DAILY, beta, extra)
+    return {
+        "NVDA": Series(bars("NVDA", stock, days=LONG), []),
+        "QQQ": Series(bars("QQQ", qqq, days=LONG), []),
+    }
+
+
+def test_fit_finds_the_slope_and_how_well_it_explains() -> None:
+    exact = fit([(0.001 + 1.5 * q, q) for q in QQQ_DAILY])
+    assert exact.beta == pytest.approx(1.5) and exact.r_squared == pytest.approx(1.0)
+    assert fit([(0.01, 0.0), (0.02, 0.0), (0.0, 0.0)]) is None  # QQQ never moved
+    assert fit([(0.01, 0.01)]) is None
+
+
+def test_alpha_and_beta_split_the_return() -> None:
+    [score] = score_entries([entry(1, "opened", et(LONG[0], 10))], long_series()).values()
+
+    assert (score.fit, score.days, score.sessions) == ("ok", 30, 30)
+    assert score.beta == pytest.approx(1.5)
+    assert score.r_squared == pytest.approx(1.0)
+    assert score.market_part == pytest.approx(1.5 * score.qqq_return)
+    assert score.alpha == pytest.approx(score.stock_return - score.market_part)
+    assert score.alpha > 0.02  # 0.1% a day beyond QQQ's pull, for 30 days
+    # The daily pairs compound to the score's own returns.
+    assert math.prod(1 + s for s, _ in score.daily) - 1 == pytest.approx(score.stock_return)
+    assert math.prod(1 + q for _, q in score.daily) - 1 == pytest.approx(score.qqq_return)
+
+
+def test_a_trade_start_and_a_closed_end_are_in_the_daily_pairs() -> None:
+    data = long_series()
+    trade_day, close_day = LONG[2], LONG[-3]
+    opened = entry(1, "opened", et(LONG[-1], 20), traded_on=trade_day, price=float(data["NVDA"].on(trade_day).low))
+    closed = entry(2, "closed", et(LONG[-1], 20, 1), traded_on=close_day,
+                   price=float(data["NVDA"].on(close_day).high))  # fmt: skip
+    score = score_entries([opened, closed], data)[1]
+
+    assert (score.ends, score.end_date) == ("closed", close_day)
+    assert math.prod(1 + s for s, _ in score.daily) - 1 == pytest.approx(score.stock_return)
+    assert math.prod(1 + q for _, q in score.daily) - 1 == pytest.approx(score.qqq_return)
+
+
+def test_too_early_under_twenty_daily_returns() -> None:
+    [score] = score_entries([entry(1, "opened", et(DAYS[0], 10))], series()).values()
+    assert (score.fit, score.days) == ("too_early", 5)
+    assert score.beta is None and score.alpha is None and score.market_part is None
+    assert score.stock_return == pytest.approx(0.10)  # the plain return is still given
+
+
+def test_combined_signs_each_call_and_fits_beta_on_what_was_held() -> None:
+    data = long_series(beta=1.5, extra=0.001)
+    opened = entry(1, "opened", et(LONG[0], 10))
+    passed = entry(2, "pass", et(LONG[0], 11))
+    early = entry(3, "trimmed", et(LONG[-4], 10))
+    withdrawn = entry(4, "pass", et(LONG[0], 12), withdrawn=WITHDRAWN)
+    entries = [opened, passed, early, withdrawn]
+    scores = score_entries(entries, data)
+    together = combine(entries, scores)
+
+    alpha = scores[1].alpha
+    assert scores[2].alpha == pytest.approx(alpha)  # same stock, same days
+    # The Opened was right (positive alpha); the Pass on the same move was wrong, so they cancel.
+    assert (together.scored, together.fitted, together.too_early) == (3, 2, 1)
+    assert together.alpha_of_calls == pytest.approx(0.0)
+    assert together.calls_right == 1
+    assert together.beta_of_holdings == pytest.approx(1.5)  # from the Opened only
+    assert together.holdings_days == 30
+
+
+def test_combined_with_nothing_fitted() -> None:
+    together = combine([], {})
+    assert (together.scored, together.alpha_of_calls, together.beta_of_holdings) == (0, None, None)

@@ -81,7 +81,17 @@ const passed: JournalEntry = {
   corrections: []
 };
 
-const journal: Journal = { entries: [passed, opened], open_positions: ["NVDA"] };
+const combined = {
+  scored: 0,
+  fitted: 0,
+  too_early: 0,
+  alpha_of_calls: null,
+  calls_right: 0,
+  beta_of_holdings: null,
+  holdings_days: 0
+};
+
+const journal: Journal = { entries: [passed, opened], open_positions: ["NVDA"], combined };
 
 function instrument(symbol: string, extra: Partial<Instrument> = {}): Instrument {
   return {
@@ -218,7 +228,7 @@ describe("JournalPage", () => {
   });
 
   it("has an empty state and an error state", async () => {
-    mockApi([{ path: "/api/journal", body: { entries: [], open_positions: [] } }]);
+    mockApi([{ path: "/api/journal", body: { entries: [], open_positions: [], combined } }]);
     renderAt("/journal");
     expect(await screen.findByText("No decisions logged yet")).toBeTruthy();
     expect(screen.getByText("No open positions")).toBeTruthy();
