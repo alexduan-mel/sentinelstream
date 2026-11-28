@@ -51,6 +51,7 @@ def test_list_tasks_shows_seeded_definitions(signed_in_client) -> None:
         if task["task_id"]
         in (
             "compute_base_rates",
+            "diff_10k_sections",
             "extract_10k_sections",
             "ingest_insider_datasets",
             "ingest_market_8k",
@@ -62,6 +63,7 @@ def test_list_tasks_shows_seeded_definitions(signed_in_client) -> None:
     }
     assert due_now == {
         "compute_base_rates": ("Daily 06:00 ET", "automatic"),
+        "diff_10k_sections": ("Every 1 h", "automatic"),
         "extract_10k_sections": ("Every 1 h", "automatic"),
         "ingest_insider_datasets": ("Every 1 h", "automatic"),
         "ingest_market_8k": ("Every 10 min", "automatic"),
