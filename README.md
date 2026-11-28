@@ -79,6 +79,8 @@ Other decisions are recorded in [`docs/decisions/`](docs/decisions).
 | **M2** Evidence harness | Done, Nov 2026 | As-of data access with tests proving lookahead is blocked, event studies with costs, a base rate (with sample size) on every high alert, and the insider-buying study |
 | **M3** Explain | Done | XBRL fundamentals and a year-over-year 10-K diff with citations to filing sections |
 | **M4** Journal | Done, Nov 2026 | Decision ledger, and returns against QQQ split into alpha and beta |
+| Docs and polish | 30 Nov – 6 Dec 2026 | README brought up to date; UI and interaction polish |
+| **M5** Events, news and digest | Planned, 7 Dec 2026 – 10 Jan 2027 | One `events` table for filings and news with `known_at`, raw payloads kept in S3, a daily Slack digest, news with cross-source dedupe and versioned rules-based sentiment, and base rates for large companies and for news |
 | AWS stage 2 | Optional | RDS, ECS Fargate, S3 and CloudFront |
 
 **Out of scope:** trade execution and broker connections; buy or sell recommendations; options, intraday data and order books; charting, screeners and a general fundamentals UI; and multi-user SaaS. Broker apps and TradingView already cover those well.

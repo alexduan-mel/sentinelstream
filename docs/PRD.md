@@ -1,10 +1,10 @@
 # SentinelStream: product requirements
 
-_As of 20 Nov 2026_
+_As of 29 Nov 2026_
 
 ## Summary
 
-SentinelStream is a personal research assistant for a long-horizon US stock investor. It alerts on material SEC filings for a watchlist, explains them from the filings themselves, shows what has historically happened after similar events, and keeps an honest record of decisions against a benchmark.
+SentinelStream is a personal research assistant for a long-horizon US stock investor. It alerts on material SEC filings and news for a watchlist, explains them from the filings themselves, shows what has historically happened after similar events, and keeps an honest record of decisions against a benchmark.
 
 - **User:** one investor, the owner.
 - **Scope:** US stocks and ETFs, held for days to months.
@@ -53,9 +53,9 @@ flowchart LR
 
 | Module | What it does | v1 must-haves | Later |
 | --- | --- | --- | --- |
-| Alert | Watches EDGAR for watchlist companies and pushes what matters | 8-K items and Form 4 buys; dedupe; push within minutes; quiet hours | News-based alerts; earnings calendar |
+| Alert | Watches EDGAR for watchlist companies and pushes what matters | 8-K items and Form 4 buys; dedupe; push within minutes; quiet hours | News alerts and a daily digest (M5); earnings calendar |
 | Explain | Deep dive on a filing or a company | XBRL key financials; 10-K risk-factor and MD&A changes vs last year; every claim cited | Peer comparison; company relationships |
-| Evidence | Research harness that produces base rates | As-of data access; event studies at 1/5/20/60 days vs benchmark; costs; sample size and confidence shown | Rank IC across features; sentiment features |
+| Evidence | Research harness that produces base rates | As-of data access; event studies at 1/5/20/60 days vs benchmark; costs; sample size and confidence shown; market and industry scopes | Large-cap scope and news base rates (M5); rank IC across features; sentiment features |
 | Journal | Decision log and performance record | Log a decision and thesis from an alert; returns vs QQQ (SPY for reference); alpha and beta split | Position-sizing helper |
 
 ## MVP: the walking skeleton
@@ -117,7 +117,7 @@ flowchart LR
 | EC2 (t4g.small) + Docker Compose | API, scheduler, workers, Postgres, web | 1 |
 | Systems Manager | Deploy step; secrets in Parameter Store | 1 |
 | CloudWatch Logs + alarms | Container logs; alarm on failed runs | 1 |
-| S3 | Raw filing archive; nightly database backups | 1 |
+| S3 | Raw archive of every fetched payload (filings, XBRL, news), never overwritten; nightly database backups | 1 |
 | AWS Budgets | Monthly spend alarm | 1 |
 | RDS PostgreSQL | Managed database | 2 |
 | ECS Fargate + load balancer | Containers without managing a server | 2 |
@@ -132,11 +132,12 @@ Region: us-east-1. Stage 1 avoids a NAT gateway and load balancer to keep cost l
 | SEC EDGAR filings | 8-K, 10-K, 10-Q, 20-F, 6-K, Form 4 | Free | Declared User-Agent and client-side rate limiting |
 | SEC XBRL APIs (data.sec.gov) | Financial numbers for Explain | Free | Companies use different tags for the same item, so a mapping layer is needed |
 | Massive | Daily price bars, market-wide daily bars, stock splits | Free plan | 5 requests a minute; two years of history |
-| Finnhub | News (later) | Free tier | Short history, rate limits |
+| Finnhub | Company news (M5) | Free tier | Short history, rate limits |
+| GlobeNewswire | Press releases (M5) | Free | Tickers are linked by SentinelStream, with a confidence |
 | Slack incoming webhook | Alert push | Free | None |
 | OpenAI | Explain summaries (later) | Pay per use | Look-ahead bias in backtests; cite-or-reject |
 
-**Known data limits:** historical index membership isn't free, so any research universe is approximate and documented as such (survivorship bias). Price adjustments for splits and dividends come from the bar provider and must be checked.
+**Known data limits:** historical index membership isn't free, so any research universe is approximate and documented as such (survivorship bias). Price adjustments for splits and dividends come from the bar provider and must be checked. The free price plan serves two years of history and drops the oldest day each day, so market-wide bars are stored daily and history grows from there.
 
 ## Success metrics
 
@@ -147,20 +148,38 @@ Region: us-east-1. Stage 1 avoids a NAT gateway and load balancer to keep cost l
 | Deployment | Every merge to `main` deploys automatically; rollback = redeploy the previous image tag |
 | Pipeline reliability | At least 99% of scheduled runs succeed each week |
 | Research correctness | Lookahead blocked by tests; reproduces the direction of a published insider-buying effect |
+| Daily digest | Arrives every morning, including days with no material events |
 | AWS cost, stage 1 | US$30 a month or less |
 
 ## Milestones
 
-| Milestone | Target | Done when |
+| Milestone | Status or dates | Done when |
 | --- | --- | --- |
-| M0 Showcase repo on AWS | 23–29 Nov 2026 | Public repo with CI (tests + gitleaks), Terraform, auto-deploy to EC2; core prototype modules carried over |
-| M1 Alerts live | 30 Nov – 13 Dec 2026 | Watchlist 8-K and Form 4 alerts reach Slack within 10 minutes; ticker onboarding job |
-| M2 Evidence harness | 14 Dec 2026 – 10 Jan 2027 | As-of data access with lookahead tests; event studies with costs; a base rate on each alert; insider-buying effect reproduced |
-| M3 Explain | 11–24 Jan 2027 | XBRL fundamentals; 10-K year-over-year diff with citations |
-| M4 Journal | 25–31 Jan 2027 | Decision ledger; returns vs QQQ with an alpha and beta split |
-| AWS stage 2 (optional) | 1–7 Feb 2027 | RDS, ECS Fargate, S3 + CloudFront |
+| M0 Showcase repo on AWS | Done, Nov 2026 | Public repo with CI (tests + gitleaks), Terraform, auto-deploy to EC2; core prototype modules carried over |
+| M1 Alerts live | Built; the last check waits for a qualifying watchlist 8-K | Watchlist 8-K and Form 4 alerts reach Slack within 10 minutes; ticker onboarding job |
+| M2 Evidence harness | Done, Nov 2026 | As-of data access with lookahead tests; event studies with costs; a base rate on each alert; insider-buying study |
+| M3 Explain | Done, Nov 2026 | XBRL fundamentals; 10-K year-over-year diff with citations |
+| M4 Journal | Done, Nov 2026 | Decision ledger; returns vs QQQ with an alpha and beta split |
+| Docs and polish | 30 Nov – 6 Dec 2026 | README brought up to date; UI and interaction polish |
+| M5 Events, news and digest | 7 Dec 2026 – 10 Jan 2027 | See below |
+| AWS stage 2 (optional) | Not scheduled | RDS, ECS Fargate, S3 + CloudFront |
 
-If time runs short, cut from the bottom (stage 2, then M4).
+If time runs short, cut from the bottom (stage 2 first, then M5's week 4).
+
+### M5: events, news and a daily digest
+
+M5 moves SentinelStream from SEC filings alone to events from several sources on one time model, and makes base rates fit the stocks on the watchlist. It builds on what M2 already loads: market-wide daily bars, market-wide 8-K items and base rates by market and industry.
+
+| Week | Work | Done when |
+| --- | --- | --- |
+| 1 (7–13 Dec) | One `events` table for every source: `source`, `event_type`, `ticker`, `link_confidence`, `published_at`, `first_seen_at`, `known_at`, `payload_ref`. SEC alerts move onto it. Raw payloads go to S3 unchanged, partitioned by source and date (news batched hourly; XBRL stored only when its content changes). A daily digest to Slack each morning after the US close, sent even on quiet days. A large-cap base-rate scope beside the market and industry scopes | Alerts and base rates are the same before and after the move; the digest arrives every morning with poll and event counts; an alert on a large company shows a large-cap base rate |
+| 2–3 (14–27 Dec) | News from Finnhub and GlobeNewswire into `events`: SimHash dedupe across sources, `known_at`, ticker linking as its own step with a confidence, rules-based sentiment v1 as a versioned derived layer. Watchlist tickers first | One story from several sources alerts once; sentiment can be recomputed from the raw payloads when the rules change |
+| 4 (28 Dec – 3 Jan) | News base rates in the existing scopes (market, industry, large-cap). A check that market-wide bars are stored every trading day | News alerts show a base rate with its sample size; the bar history has no missing trading days |
+| 5 (4–10 Jan) | Holiday slack and loose ends | — |
+
+Not in M5: cross-sectional scoring or portfolio backtests, paid consensus estimates, a longer price backfill than the free plan allows, point-in-time index membership, and model-based sentiment (FinBERT stays in the prototype).
+
+Open question: whether "large-cap" is cut by market value (shares outstanding from XBRL) or by traded value (from market bars alone).
 
 ## Risks
 
@@ -168,4 +187,4 @@ If time runs short, cut from the bottom (stage 2, then M4).
 - **EDGAR throttling:** declared User-Agent, backoff and caching.
 - **Small samples for rare events:** base rates always show sample size and a confidence range, and pool across similar stocks when the sample is small.
 - **LLM errors:** numbers come only from XBRL; text claims without a citation are rejected.
-- **Scope creep:** options, news and UI polish stay out of the core milestones.
+- **Scope creep:** options stay out of the core milestones.
