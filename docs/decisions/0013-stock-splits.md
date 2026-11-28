@@ -21,7 +21,7 @@ Checked against the live API on 27 Nov 2026, with the free plan:
 
 **A new table, `stock_splits`, keyed by Massive's id,** not by symbol and day, so several splits on one day are all kept. Every split Massive reports is stored, for every symbol, matched exactly like `market_bars`. `known_at` is the start of the execution day in New York, the first day the new share count trades. Splits are announced before that, so it is never earlier than public. Research reads them through `AsOf.splits`. `Split.share_factor` (`split_to / split_from`) is what an as-traded close is multiplied by to compare it with a close from before the split.
 
-**A new daily task, `ingest_splits`,** at 17:00 ET: after the close, before `ingest_prices` at 18:30. It also runs once straight after deploy.
+**A new daily task, `ingest_splits`,** at 17:00 ET: after the close, before `ingest_prices` (18:30 at first; 05:00 the next morning since migration 019, because Massive serves a day only once it has ended). It also runs once straight after deploy.
 
 - **One calendar quarter per request.** A quarter held about 400 splits in 2025. Paging is never followed; a reply that fills a page is an error, so a quarter is never silently cut short.
 - **A quarter is replaced whole,** in one transaction. Splits in it that Massive no longer lists are removed, so corrections and withdrawals come through. An empty reply for a quarter that already has splits stored is treated as a provider error, because every quarter so far has had hundreds.

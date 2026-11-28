@@ -22,7 +22,7 @@ from typing import Any
 from psycopg2.extensions import connection as Connection
 from psycopg2.extras import Json, execute_values
 
-from ingestion.market_calendar import NEW_YORK, latest_completed_session
+from ingestion.market_calendar import NEW_YORK, latest_published_session
 from ingestion.massive_client import MassiveClient, MassiveError
 from orchestration.task_runs import RunResult, TaskRun
 
@@ -135,7 +135,7 @@ def upsert_bars(conn: Connection, rows: list[tuple]) -> tuple[int, int]:
 def ingest_prices(
     run: TaskRun, conn: Connection, *, massive: MassiveClient | None = None, now: datetime | None = None
 ) -> RunResult:
-    target = latest_completed_session(now or datetime.now(UTC))
+    target = latest_published_session(now or datetime.now(UTC))
     lookback = _lookback_days(run.payload)
     explicit_from = _payload_date(run.payload, "date_from")
     explicit_to = _payload_date(run.payload, "date_to")

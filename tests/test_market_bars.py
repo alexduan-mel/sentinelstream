@@ -15,9 +15,10 @@ from orchestration.task_runs import TaskRun, enqueue_run
 from research.asof import AsOf
 
 KEY = "test-key-not-real"
-# Friday 27 Nov 2026, 20:00 UTC = 15:00 New York, after the 13:00 half-day close: target is 27 Nov.
+# Friday 27 Nov 2026, 20:00 UTC = 15:00 New York, after the 13:00 half-day close. Massive serves a
+# day only once it has ended in New York, and 26 Nov was Thanksgiving, so the target is 25 Nov.
 NOW = datetime(2026, 11, 27, 20, 0, tzinfo=UTC)
-TARGET = date(2026, 11, 27)
+TARGET = date(2026, 11, 25)
 START = date(2024, 11, 27)
 ALL_DAYS = trading_days(START, TARGET)
 
@@ -48,6 +49,7 @@ class FakeMassive:
         self.requests: list[httpx.Request] = []
         self.entitled_from = START
         self.unpublished: set[date] = set()  # no bars (holiday-like, or not yet published)
+        self.not_ended: set[date] = set()  # refused with "before end of day"
         self.failing: dict[date, httpx.Response] = {}
 
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -61,6 +63,14 @@ class FakeMassive:
                 json={
                     "status": "NOT_AUTHORIZED",
                     "message": "Attempted to request data past historical entitlements. Please upgrade your plan",
+                },
+            )
+        if day in self.not_ended:
+            return httpx.Response(
+                403,
+                json={
+                    "status": "NOT_AUTHORIZED",
+                    "message": "Attempted to request today's data before end of day. Please upgrade your plan",
                 },
             )
         if day in self.unpublished:
@@ -206,13 +216,37 @@ def test_runs_load_a_few_days_each_oldest_first_then_stop_asking(connect_app_db)
     assert _days_table(conn)[TARGET] == ("loaded", 3, f"req-{TARGET}")
 
 
-def test_an_unclosed_session_is_never_requested(connect_app_db) -> None:
+@pytest.mark.parametrize(
+    "now",
+    [
+        datetime(2026, 11, 25, 17, 0, tzinfo=UTC),  # 12:00 New York, Wednesday 25 Nov: still open
+        datetime(2026, 11, 26, 4, 59, tzinfo=UTC),  # 23:59 New York: closed, but the day has not ended
+    ],
+)
+def test_a_day_is_not_requested_until_it_has_ended_in_new_york(connect_app_db, now: datetime) -> None:
     conn = connect_app_db()
     fake = FakeMassive()
-    midday = datetime(2026, 11, 25, 17, 0, tzinfo=UTC)  # 12:00 New York, Wednesday 25 Nov
     with fake.client() as client:
-        ingest_market_bars(_run(conn, max_days=1000), conn, massive=client, now=midday)
-    assert max(fake.days()) == date(2026, 11, 24)
+        ingest_market_bars(_run(conn, max_days=1000), conn, massive=client, now=now)
+        assert max(fake.days()) == date(2026, 11, 24)
+        ingest_market_bars(_run(conn), conn, massive=client, now=datetime(2026, 11, 26, 5, 0, tzinfo=UTC))
+    assert max(fake.days()) == date(2026, 11, 25)  # midnight New York
+
+
+def test_a_before_end_of_day_refusal_waits_instead_of_failing(connect_app_db) -> None:
+    conn = connect_app_db()
+    fake = FakeMassive()
+    fake.not_ended = {TARGET}
+    with fake.client() as client:
+        result = ingest_market_bars(_run(conn, max_days=1000), conn, massive=client, now=NOW)
+        assert result.status == "succeeded"
+        assert result.meta["waiting"] == [TARGET.isoformat()]
+        assert result.meta["errors"] == []
+        assert TARGET not in _days_table(conn)
+
+        fake.not_ended = set()
+        later = ingest_market_bars(_run(conn), conn, massive=client, now=NOW + timedelta(hours=1))
+    assert later.meta["loaded"] == [TARGET.isoformat()]
 
 
 def test_days_before_the_plan_history_are_recorded_unavailable_and_not_asked_again(connect_app_db) -> None:

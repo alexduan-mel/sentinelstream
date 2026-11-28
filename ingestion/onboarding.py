@@ -39,7 +39,7 @@ from psycopg2.extensions import connection as Connection
 from psycopg2.extras import execute_values
 
 from filings.xbrl import XbrlFact, parse_company_facts
-from ingestion.market_calendar import latest_completed_session
+from ingestion.market_calendar import latest_published_session
 from ingestion.massive_client import MassiveClient, MassiveError
 from ingestion.price_bars import bar_rows, upsert_bars
 from ingestion.sec_client import SecClient, SecError
@@ -124,7 +124,7 @@ class _Run:
         self._owns_sec = sec is None
         self._owns_massive = massive is None
         self._ticker_map: list[dict[str, Any]] | None = None
-        self.target = latest_completed_session(now)
+        self.target = latest_published_session(now)
         self.since = (now - HISTORY).date()
         self.meta: dict[str, Any] = {"ready": [], "rejected": [], "errors": [], "loaded": {}}
 

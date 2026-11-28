@@ -133,6 +133,24 @@ def test_latest_completed_session(now_utc: datetime, expected: date) -> None:
     assert cal.latest_completed_session(now_utc) == expected
 
 
+@pytest.mark.parametrize(
+    ("now_utc", "expected"),
+    [
+        (datetime(2026, 11, 25, 22, 0, tzinfo=UTC), date(2026, 11, 24)),  # 17:00 New York: closed, day not over
+        (datetime(2026, 11, 26, 4, 59, tzinfo=UTC), date(2026, 11, 24)),  # 23:59 New York
+        (datetime(2026, 11, 26, 5, 0, tzinfo=UTC), date(2026, 11, 25)),  # midnight New York
+        (datetime(2026, 11, 28, 0, 30, tzinfo=UTC), date(2026, 11, 25)),  # Friday evening after the half day
+        (datetime(2026, 11, 28, 10, 0, tzinfo=UTC), date(2026, 11, 27)),  # Saturday morning
+        (datetime(2026, 11, 30, 10, 0, tzinfo=UTC), date(2026, 11, 27)),  # Monday morning
+        (datetime(2026, 7, 1, 4, 30, tzinfo=UTC), date(2026, 6, 30)),  # 00:30 New York in summer time: 30 June ended
+    ],
+)
+def test_latest_published_session(now_utc: datetime, expected: date) -> None:
+    assert cal.latest_published_session(now_utc) == expected
+
+
 def test_latest_completed_session_needs_an_aware_time() -> None:
     with pytest.raises(ValueError):
         cal.latest_completed_session(datetime(2026, 11, 25, 12, 0))
+    with pytest.raises(ValueError):
+        cal.latest_published_session(datetime(2026, 11, 25, 12, 0))
