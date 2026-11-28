@@ -90,13 +90,13 @@ NEW_RISKS = f"""
 """
 
 
-def _extracted(conn):
+def _extracted(conn, *, old_risks: str = OLD_RISKS, new_risks: str = NEW_RISKS):
     sec = _sec_with_10ks()
     sec.routes[_doc_path(TEN_K_2026, "nvda-20260125.htm")] = httpx.Response(
-        200, content=tenk(risk_factors=NEW_RISKS).encode()
+        200, content=tenk(risk_factors=new_risks).encode()
     )
     sec.routes[_doc_path(TEN_K_2025, "nvda-20250126.htm")] = httpx.Response(
-        200, content=tenk(risk_factors=OLD_RISKS).encode()
+        200, content=tenk(risk_factors=old_risks).encode()
     )
     _onboard(conn, sec, FakeMassive(), tickers=["NVDA"])
     run = _run(conn, task_id="extract_10k_sections")

@@ -146,3 +146,54 @@ def compare(old: list[str], new: list[str]) -> Comparison:
             changes.append((position, Change("removed", i + 1, None)))
     changes.sort(key=lambda pair: pair[0])
     return Comparison(changes=[change for _, change in changes], unchanged=unchanged, moved=moved)
+
+
+# --- reading a change ------------------------------------------------------------------------------
+
+_TOKEN = re.compile(r"\S+\s*")
+_HEADING_MAX_CHARS = 120
+_SENTENCE_END = re.compile(r"[.;:!?,)”\"]$")
+_BULLET_START = re.compile(r"^[•●◦▪■·•]")
+
+Op = Literal["equal", "delete", "insert"]
+
+
+def word_changes(old: str, new: str) -> list[tuple[Op, str]]:
+    """``new`` against ``old`` word by word: runs of kept, deleted and inserted words, with their spacing.
+
+    Words compare after folding (as ``compare`` does), so a change of quote style is not marked.
+    """
+    old_tokens, new_tokens = _TOKEN.findall(old), _TOKEN.findall(new)
+    matcher = SequenceMatcher(None, [fold(t) for t in old_tokens], [fold(t) for t in new_tokens], autojunk=False)
+    segments: list[tuple[Op, str]] = []
+
+    def add(op: Op, tokens: list[str]) -> None:
+        text = "".join(tokens)
+        if not text:
+            return
+        if segments and segments[-1][0] == op:
+            segments[-1] = (op, segments[-1][1] + text)
+        else:
+            segments.append((op, text))
+
+    for tag, a1, a2, b1, b2 in matcher.get_opcodes():
+        if tag == "equal":
+            add("equal", new_tokens[b1:b2])
+        else:
+            add("delete", old_tokens[a1:a2])
+            add("insert", new_tokens[b1:b2])
+    return segments
+
+
+def is_heading(text: str) -> bool:
+    """A short line that is not a sentence or a bullet: a section's own heading, such as "Overview"."""
+    text = text.strip()
+    return 0 < len(text) <= _HEADING_MAX_CHARS and not _SENTENCE_END.search(text) and not _BULLET_START.match(text)
+
+
+def heading_before(paragraphs: list[str], number: int) -> int | None:
+    """The number (from 1) of the nearest heading at or before paragraph ``number``, or None."""
+    for index in range(min(number, len(paragraphs)) - 1, -1, -1):
+        if is_heading(paragraphs[index]):
+            return index + 1
+    return None
