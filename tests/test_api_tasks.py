@@ -59,6 +59,7 @@ def test_list_tasks_shows_seeded_definitions(signed_in_client) -> None:
             "ingest_splits",
             "onboard_tickers",
             "refresh_xbrl_facts",
+            "summarize_10k_changes",
         )
     }
     assert due_now == {
@@ -71,6 +72,7 @@ def test_list_tasks_shows_seeded_definitions(signed_in_client) -> None:
         "ingest_splits": ("Daily 17:00 ET", "automatic"),
         "onboard_tickers": ("Daily 19:00 ET", "automatic"),
         "refresh_xbrl_facts": ("Every 1 h", "automatic"),
+        "summarize_10k_changes": ("Every 1 h", "automatic"),
     }
     assert all(task["next_run_at"] is not None for task in tasks if task["task_id"] in due_now)
     tasks = [task for task in tasks if task["task_id"] not in due_now]

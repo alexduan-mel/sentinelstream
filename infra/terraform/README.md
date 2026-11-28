@@ -80,6 +80,12 @@ High alerts go to Slack through an incoming webhook ([ADR 0009](../../docs/decis
 aws ssm put-parameter --name /sentinelstream/SLACK_WEBHOOK_URL --type SecureString --value "https://hooks.slack.com/services/..."
 ```
 
+Summaries of 10-K changes are written by the Claude API ([ADR 0024](../../docs/decisions/0024-10k-change-summaries.md)). Until the key is set, `summarize_10k_changes` fails with a clear error and the ticker page shows the changes without a summary. Create a key at console.anthropic.com, store it as a SecureString and redeploy:
+
+```sh
+aws ssm put-parameter --name /sentinelstream/ANTHROPIC_API_KEY --type SecureString --value "sk-ant-..."
+```
+
 ## Reaching the host and UI
 
 No inbound ports are open. Use Session Manager:
