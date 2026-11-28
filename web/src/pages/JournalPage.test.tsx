@@ -53,7 +53,8 @@ const opened: JournalEntry = {
       known_at: "2026-11-28T15:05:00Z",
       recorded_by: "admin"
     }
-  ]
+  ],
+  score: null
 };
 
 const passed: JournalEntry = {

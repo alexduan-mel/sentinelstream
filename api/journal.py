@@ -9,7 +9,7 @@ and the entry comes back with both the original and the corrected wording.
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from api.auth import CurrentUser
 from api.db import DbConn
 from ledger.journal import REASON_MAX, THESIS_MAX, JournalError, correct_entry, list_entries, log_entry, open_positions
+from ledger.scoring import score_journal
 
 router = APIRouter(prefix="/api", tags=["journal"])
 
@@ -47,6 +48,26 @@ class Correction(BaseModel):
     recorded_by: str
 
 
+class Score(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    status: Literal["scored", "waiting"]
+    start_date: date | None
+    start_basis: Literal["trade", "next_close"] | None
+    start_price: float | None
+    price_check: Literal["ok", "out_of_range"] | None
+    end_date: date | None
+    end_price: float | None
+    ends: Literal["closed", "latest"] | None
+    closed_by: int | None
+    sessions: int
+    stock_return: float | None
+    qqq_return: float | None
+    spy_return: float | None
+    vs_qqq: float | None
+    vs_spy: float | None
+
+
 class Entry(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -65,6 +86,8 @@ class Entry(BaseModel):
     recorded_by: str
     withdrawn: Correction | None
     corrections: list[Correction]
+    # How it has done since, against QQQ and SPY (ADR 0026); None for a withdrawn entry.
+    score: Score | None = None
 
 
 class Journal(BaseModel):
@@ -97,15 +120,29 @@ def _symbol(raw: str) -> str:
     return symbol
 
 
+def _scored(conn, entries) -> list[Entry]:
+    """Entries with their scores, from the bars stored before now (ground rule 2)."""
+    scores = score_journal(conn, entries, datetime.now(UTC))
+    return [
+        Entry.model_validate(e).model_copy(
+            update={"score": Score.model_validate(scores[e.id]) if e.id in scores else None}
+        )
+        for e in entries
+    ]
+
+
 def _entry(conn, entry_id: int) -> Entry:
-    return Entry.model_validate(list_entries(conn, entry_id=entry_id)[0])
+    [entry] = list_entries(conn, entry_id=entry_id)
+    # A score can depend on the ticker's other entries (a Closed ends an Opened).
+    return next(e for e in _scored(conn, list_entries(conn, symbol=entry.symbol)) if e.id == entry_id)
 
 
 @router.get("/journal")
 def get_journal(conn: DbConn, symbol: Annotated[str | None, Query()] = None) -> Journal:
-    """Every entry, newest first, withdrawn ones included; or one ticker's."""
+    """Every entry, newest first, withdrawn ones included; or one ticker's. Each counted entry carries
+    its score, worked out from stored bars on each request (ADR 0026)."""
     entries = list_entries(conn, symbol=_symbol(symbol) if symbol else None)
-    return Journal(entries=[Entry.model_validate(e) for e in entries], open_positions=open_positions(conn))
+    return Journal(entries=_scored(conn, entries), open_positions=open_positions(conn))
 
 
 @router.post("/journal", status_code=201)
