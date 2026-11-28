@@ -11,7 +11,7 @@ import pytest
 
 from ingestion.market_calendar import NEW_YORK
 from ledger.journal import Correction, Entry
-from ledger.scoring import Series, combine, fit, score_entries, score_journal
+from ledger.scoring import Series, combine, fit, money, score_entries, score_journal
 from research.asof import Bar, Split
 
 # Mon 16 Nov to Fri 20 Nov 2026, then Mon 23 Nov.
@@ -221,6 +221,8 @@ def test_the_journal_api_carries_each_entrys_score(signed_in_client, stored_bars
     assert journal["combined"]["scored"] == 1 and journal["combined"]["too_early"] == 1
     assert journal["entries"][1]["score"]["fit"] == "too_early"
     assert "daily" not in journal["entries"][1]["score"]
+    assert journal["money"]["excluded"] == 1  # the Opened gave no share count
+    assert journal["money"]["positions"][0]["excluded"] == "no_shares"
 
 
 # --- Alpha and beta (ADR 0027) ---
@@ -320,3 +322,55 @@ def test_combined_signs_each_call_and_fits_beta_on_what_was_held() -> None:
 def test_combined_with_nothing_fitted() -> None:
     together = combine([], {})
     assert (together.scored, together.alpha_of_calls, together.beta_of_holdings) == (0, None, None)
+
+
+# --- The money view (ADR 0028) ---
+
+
+def test_a_position_in_dollars_against_the_same_dollars_in_qqq() -> None:
+    opened = entry(1, "opened", et(DAYS[-1], 20), traded_on=DAYS[2], price=103.5, shares=10)  # QQQ open 508
+    added = entry(2, "added", et(DAYS[3], 10), shares=5)  # Thursday's close: 106, QQQ 515
+    trimmed = entry(3, "trimmed", et(DAYS[4], 10), shares=6)  # Friday's close: 108, QQQ 520
+    passed = entry(4, "pass", et(DAYS[4], 11))
+    entries = [opened, added, trimmed, passed]
+    data = series()
+    view = money(entries, score_entries(entries, data), data)
+
+    [position] = view.positions
+    assert (position.symbol, position.opened_id, position.status, position.excluded) == ("NVDA", 1, "open", None)
+    assert (position.start_date, position.end_date) == (DAYS[2], DAYS[-1])
+    assert position.bought == pytest.approx(10 * 103.5 + 5 * 106)
+    assert position.sold == pytest.approx(6 * 108)
+    assert position.value == pytest.approx(9 * 110)  # latest close
+    assert position.profit == pytest.approx(6 * 108 + 9 * 110 - 1565)
+    units = 1035 / 508 + 530 / 515
+    assert position.qqq_profit == pytest.approx(units * 0.4 * 520 + units * 0.6 * 525 - 1565)
+    assert (view.bought, view.profit, view.qqq_profit, view.excluded) == pytest.approx(
+        (1565, position.profit, position.qqq_profit, 0)
+    )
+
+
+def test_share_counts_before_a_split_are_moved_to_todays_basis() -> None:
+    split = Split("NVDA", DAYS[4], 1.0, 2.0, et(DAYS[4], 0))
+    opened = entry(1, "opened", et(DAYS[-1], 20), traded_on=DAYS[2], price=207.0, shares=10)
+    closed = entry(2, "closed", et(DAYS[-1], 20, 1), traded_on=DAYS[-1], price=109.0, shares=20)
+    entries = [opened, closed]
+    data = series([split])
+    [position] = money(entries, score_entries(entries, data), data).positions
+
+    assert position.status == "closed" and position.end_date == DAYS[-1]
+    assert position.bought == pytest.approx(2070)  # 10 x 207 as traded
+    assert position.sold == pytest.approx(20 * 109)
+    assert position.value == 0 and position.profit == pytest.approx(2180 - 2070)
+
+
+def test_positions_without_share_counts_or_prices_are_left_out_of_the_totals() -> None:
+    no_shares = [entry(1, "opened", et(DAYS[0], 10), shares=10), entry(2, "added", et(DAYS[1], 10))]
+    waiting = [entry(3, "opened", et(DAYS[-1], 17), symbol="AMZN", shares=3)]
+    withdrawn = [entry(4, "opened", et(DAYS[0], 10), symbol="GOOGL", shares=1, withdrawn=WITHDRAWN)]
+    entries = [*no_shares, *waiting, *withdrawn]
+    data = series()
+    view = money(entries, score_entries(entries, data), data)
+
+    assert sorted((p.symbol, p.excluded) for p in view.positions) == [("AMZN", "waiting"), ("NVDA", "no_shares")]
+    assert (view.bought, view.profit, view.qqq_profit, view.excluded) == (0, 0, 0, 2)

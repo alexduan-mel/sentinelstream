@@ -91,7 +91,15 @@ const combined = {
   holdings_days: 0
 };
 
-const journal: Journal = { entries: [passed, opened], open_positions: ["NVDA"], combined };
+const emptyMoney = { positions: [], bought: 0, profit: 0, qqq_profit: 0, excluded: 0 };
+
+const journal: Journal = {
+  entries: [passed, opened],
+  open_positions: ["NVDA"],
+  tickers: ["AMZN", "NVDA"],
+  combined,
+  money: emptyMoney
+};
 
 function instrument(symbol: string, extra: Partial<Instrument> = {}): Instrument {
   return {
@@ -187,8 +195,8 @@ describe("JournalPage", () => {
     expect(screen.getByRole("heading", { name: "Journal · 2" })).toBeTruthy();
   });
 
-  it("filters by ticker from the address", async () => {
-    mockApi([{ path: "/api/journal", body: journal }]);
+  it("filters by ticker from the address, on the server", async () => {
+    mockApi([{ path: "/api/journal?symbol=AMZN", body: { ...journal, entries: [passed] } }]);
     renderAt("/journal?ticker=AMZN");
 
     expect(await screen.findByText("Capex too high for now.")).toBeTruthy();
@@ -228,7 +236,12 @@ describe("JournalPage", () => {
   });
 
   it("has an empty state and an error state", async () => {
-    mockApi([{ path: "/api/journal", body: { entries: [], open_positions: [], combined } }]);
+    mockApi([
+      {
+        path: "/api/journal",
+        body: { entries: [], open_positions: [], tickers: [], combined, money: emptyMoney }
+      }
+    ]);
     renderAt("/journal");
     expect(await screen.findByText("No decisions logged yet")).toBeTruthy();
     expect(screen.getByText("No open positions")).toBeTruthy();

@@ -464,6 +464,23 @@ The day and price per share a real trade was done at, entered with an entry if y
 
 **See also:** Close; Split and split-adjusted; Lookahead
 
+### Alpha and beta
+**Beta** is how strongly a stock moved with QQQ over an entry's days: 1.5 means it tended to move 1.5% when QQQ moved 1%. It splits the stock's return in two. The **market part** is beta times QQQ's return, what QQQ's moves alone would have given a stock that sensitive. **Alpha** is the rest, the part the market doesn't explain, which is closer to whether the thesis was right. They need 20 trading days; before that an entry shows "Too early".
+
+**Example:** "+12.0% = market part +9.0% (beta 1.50 × QQQ +6.0%) + alpha +3.0%."
+
+**See also:** Return compared with QQQ; QQQ; Record of calls
+
+### Record of calls
+Your Journal entries judged together, each counting once whatever its size. A call is **right** when its alpha points the way the decision did: above zero for Opened and Added, below zero for Trimmed, Closed and Pass (not holding was the call). It shows how many were right and wrong, their average alpha, and the beta of what you held.
+
+**See also:** Alpha and beta; Pass; My money
+
+### My money
+Your positions in dollars, from the share counts and prices you logged: what you put in, took out and still hold, and the profit, next to the same dollars put into QQQ at the same moments. It is complete only if every trade is logged with its share count; positions missing one are listed but left out of the totals.
+
+**See also:** Record of calls; Trade price
+
 ### Correction and withdrawal
 How a Journal entry is fixed without being edited. A **correction** gives a new thesis or alert link with a reason, and the original stays visible above it. A **withdrawal** takes an entry out of the record with a reason, but it stays listed, marked Withdrawn. The action, ticker, trade and time can't be corrected: withdraw the entry and log it again.
 

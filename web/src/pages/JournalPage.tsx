@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   Button,
@@ -30,7 +30,18 @@ import {
   type JournalSource
 } from "../api/journal";
 import { LoadError } from "../components/LoadError";
-import { PageTitle } from "../components/PageTitle";
+import { HelpTitle } from "../components/HelpTitle";
+import {
+  AlphaCell,
+  BetaCell,
+  CallCell,
+  MIN_DAYS,
+  MoneyView,
+  RecordOfCalls,
+  ReturnCell,
+  Signed
+} from "../components/JournalScores";
+import { PageTitle, SectionTitle } from "../components/PageTitle";
 import { Timestamp } from "../components/Timestamp";
 import { useTimeZone } from "../lib/timeZone";
 
@@ -230,24 +241,19 @@ export function JournalPage() {
   const load = useCallback(async () => {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
-      setState({ data: await getJournal(), loading: false, error: null });
+      // Filtered on the server, so the record of calls and the money view cover the same entries.
+      setState({ data: await getJournal(ticker), loading: false, error: null });
     } catch (error) {
       setState({ data: null, loading: false, error: errorMessage(error) });
     }
-  }, []);
+  }, [ticker]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const entries = useMemo(
-    () => (state.data?.entries ?? []).filter((entry) => !ticker || entry.symbol === ticker),
-    [state.data, ticker]
-  );
-  const tickers = useMemo(
-    () => [...new Set((state.data?.entries ?? []).map((entry) => entry.symbol))].sort(),
-    [state.data]
-  );
+  const entries = state.data?.entries ?? [];
+  const tickers = state.data?.tickers ?? (ticker ? [ticker] : []);
 
   const toggle = (id: number) =>
     setExpanded((keys) => (keys.includes(id) ? keys.filter((key) => key !== id) : [...keys, id]));
@@ -256,7 +262,7 @@ export function JournalPage() {
     {
       title: "Logged",
       dataIndex: "known_at",
-      width: 170,
+      width: 150,
       render: (value: string) => <Timestamp value={value} />
     },
     {
@@ -291,13 +297,19 @@ export function JournalPage() {
         <div className={entry.withdrawn ? "text-text-muted" : undefined}>
           <div className="line-clamp-3 whitespace-pre-wrap">{entry.thesis}</div>
           {entry.thesis !== entry.original_thesis && <Muted>Corrected</Muted>}
+          {entry.source && (
+            <div>
+              <Muted>From </Muted>
+              <SourceLink source={entry.source} />
+            </div>
+          )}
         </div>
       )
     },
     {
       title: "Trade",
       key: "trade",
-      width: 230,
+      width: 190,
       render: (_, entry) =>
         tradeLabel(entry) ??
         (entry.action === "pass" ? (
@@ -314,10 +326,63 @@ export function JournalPage() {
         ))
     },
     {
-      title: "From alert",
-      key: "source",
-      width: 150,
-      render: (_, entry) => (entry.source ? <SourceLink source={entry.source} /> : <Muted>—</Muted>)
+      title: (
+        <HelpTitle
+          title="Return"
+          help="The stock's price change since the entry, to its Closed entry or the latest close. Hover a value for the dates and QQQ's and SPY's over the same days."
+        />
+      ),
+      key: "return",
+      width: 100,
+      align: "right",
+      render: (_, entry) => <ReturnCell entry={entry} />
+    },
+    {
+      title: (
+        <HelpTitle
+          title="vs QQQ"
+          help="The stock's return minus QQQ's over the same days: above zero, it did better than the index."
+        />
+      ),
+      key: "vs_qqq",
+      width: 100,
+      align: "right",
+      render: (_, entry) => <Signed value={entry.score?.vs_qqq} />
+    },
+    {
+      title: (
+        <HelpTitle
+          title="Alpha"
+          help={`The part of the return QQQ's moves don't explain, once the stock's beta is allowed for. Needs ${MIN_DAYS} trading days.`}
+        />
+      ),
+      key: "alpha",
+      width: 100,
+      align: "right",
+      render: (_, entry) => <AlphaCell entry={entry} />
+    },
+    {
+      title: (
+        <HelpTitle
+          title="Beta"
+          help="How much the stock moved for each 1% move in QQQ over the entry's days."
+        />
+      ),
+      key: "beta",
+      width: 80,
+      align: "right",
+      render: (_, entry) => <BetaCell entry={entry} />
+    },
+    {
+      title: (
+        <HelpTitle
+          title="Call"
+          help="Right or wrong beyond the market: Opened and Added are right when alpha is above zero; Trimmed, Closed and Pass when it is below zero."
+        />
+      ),
+      key: "call",
+      width: 80,
+      render: (_, entry) => <CallCell entry={entry} />
     },
     {
       title: "",
@@ -359,6 +424,13 @@ export function JournalPage() {
         )}
       </Space>
 
+      {state.data && state.data.combined.scored > 0 && (
+        <>
+          <SectionTitle>Record of calls</SectionTitle>
+          <RecordOfCalls combined={state.data.combined} />
+        </>
+      )}
+
       {state.error ? (
         <LoadError message={state.error} onRetry={() => void load()} />
       ) : (
@@ -367,7 +439,7 @@ export function JournalPage() {
           size="small"
           tableLayout="fixed"
           // Below this width the table scrolls sideways, so the thesis keeps room to read.
-          scroll={{ x: 1100 }}
+          scroll={{ x: 1400 }}
           loading={state.loading}
           columns={columns}
           dataSource={entries}
@@ -387,10 +459,19 @@ export function JournalPage() {
         />
       )}
 
+      {state.data && state.data.money.positions.length > 0 && (
+        <>
+          <SectionTitle>My money</SectionTitle>
+          <MoneyView money={state.data.money} />
+        </>
+      )}
+
       <Muted>
         {"Your own decisions, newest first. Each is logged at the server's time and never edited: a " +
           "correction is added under the original, and a withdrawn entry stays listed with its " +
-          "reason. A trade's day and price are checked against that day's prices. See "}
+          "reason. A trade's day and price are checked against that day's prices. Returns are price " +
+          "changes worked out from stored daily prices each time the page loads; dividends are not " +
+          "included. See "}
         <Link to="/glossary#journal">Journal</Link> in the glossary.
       </Muted>
     </Space>

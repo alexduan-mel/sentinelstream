@@ -87,10 +87,38 @@ export type JournalEntry = {
   score: JournalScore | null;
 };
 
+/** One position in dollars, against the same dollars in QQQ (ADR 0028). */
+export type MoneyPosition = {
+  symbol: string;
+  opened_id: number;
+  start_date: string | null;
+  end_date: string | null;
+  status: "open" | "closed";
+  /** Left out of the totals: an entry gave no share count, or prices haven't arrived yet. */
+  excluded: "no_shares" | "waiting" | null;
+  bought: number | null;
+  sold: number | null;
+  value: number | null;
+  profit: number | null;
+  qqq_profit: number | null;
+};
+
+export type Money = {
+  positions: MoneyPosition[];
+  bought: number;
+  profit: number;
+  qqq_profit: number;
+  excluded: number;
+};
+
 export type Journal = {
   entries: JournalEntry[];
   open_positions: string[];
+  /** Every ticker with an entry, whatever the filter. */
+  tickers: string[];
+  /** These cover the entries in the response: one ticker's when filtered. */
   combined: JournalCombined;
+  money: Money;
 };
 
 export type NewEntry = {
@@ -184,4 +212,58 @@ export function tradeLabel(
   if (entry.price !== null) parts.push(priceFormat.format(entry.price));
   if (entry.shares !== null) parts.push(`${sharesFormat.format(entry.shares)} sh`);
   return parts.length ? parts.join(" · ") : null;
+}
+
+/** Opened and Added are calls that the stock does well; Trimmed, Closed and Pass that it doesn't. */
+export const CALL_SIGN: Record<JournalAction, 1 | -1> = {
+  opened: 1,
+  added: 1,
+  trimmed: -1,
+  closed: -1,
+  pass: -1
+};
+
+/** Whether a call was right beyond what QQQ's moves explain; null until it has an alpha. */
+export function callRight(entry: Pick<JournalEntry, "action" | "score">): boolean | null {
+  const alpha = entry.score?.alpha;
+  if (alpha === null || alpha === undefined) return null;
+  return CALL_SIGN[entry.action] * alpha > 0;
+}
+
+const percentFormat = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+  signDisplay: "exceptZero"
+});
+const dollarsFormat = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0
+});
+const signedDollarsFormat = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+  signDisplay: "exceptZero"
+});
+
+/** "+10.0%", "−2.3%", "0.0%". */
+export function percent(value: number): string {
+  return percentFormat.format(value).replace("-", "−");
+}
+
+/** "$1,565". */
+export function dollars(value: number): string {
+  return dollarsFormat.format(value);
+}
+
+/** "+$73", "−$120". */
+export function signedDollars(value: number): string {
+  return signedDollarsFormat.format(value).replace("-", "−");
+}
+
+/** "Nov 20, 2026" for a trading day (YYYY-MM-DD; no time zone applies). */
+export function dayLabel(value: string): string {
+  return tradeDay.format(new Date(`${value}T00:00:00Z`));
 }
