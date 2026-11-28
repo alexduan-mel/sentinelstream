@@ -4,17 +4,24 @@ SentinelStream (SS) is a personal research assistant for a long-horizon US stock
 
 Read `docs/PRD.md` for the full product spec and milestones. This file is the working agreement for anyone (human or agent) writing code here.
 
-## Current milestone: M4, journal (25 – 31 Jan 2027, started early on 28 Nov 2026)
+## Current milestone: M5, events, news and digest (7 Dec 2026 – 10 Jan 2027)
 
-M4 keeps an honest record of the owner's own decisions and measures each one against QQQ. A decision is a Journal entry: what was done (Opened, Added, Trimmed, Closed, or Pass for "looked, chose not to act"), when, and the thesis behind it, often logged from an alert. A real trade can also give its day, price per share (checked against that day's low–high range) and share count. Two views come out: the **record of calls**, where every entry counts once whatever its size, and a **my money** view from the share counts, complete only when every trade is logged. It is done when every box is ticked:
+M5 moves SS from SEC filings alone to events from several sources on one time model, and makes base rates fit the stocks on the watchlist. It builds on what M2 already loads: market-wide bars (ADR 0012), market-wide 8-K items (ADR 0017) and base rates by market and industry (ADR 0018). It starts after the docs and polish week (30 Nov – 6 Dec 2026: README and UI polish only). The full plan, by week, is in `docs/PRD.md`. Before week 1 code, write ADRs for the `events` table, the S3 raw layer, the daily digest and the large-cap scope. It is done when every box is ticked:
 
-- [x] Decision ledger: log an entry for a watchlist ticker with its action and thesis, optionally the alert it came from, and for a real trade its day, price and shares; the logging time is the server's, never typed in; entries are never edited, only corrected or withdrawn by a later row that keeps the original visible (ADR 0025)
-- [x] Journal page listing every entry with its thesis, source alert and corrections, and "Log a decision" on Alert detail
-- [x] Each entry scored from its trade price, or without one from the first daily close after it was logged, never a price already known then (tests prove it): the stock's return, QQQ's over the same days and SPY's for reference. Opened and Added run until the position's Closed entry; every other entry until the latest close. Scores are worked out from stored bars on each request, so they are always current without a scheduled task (ADR 0026)
-- [x] Alpha and beta for each entry, from a regression of its daily returns on QQQ's since entry ("too early" under 20 trading days), and for all entries together (ADR 0027)
-- [x] Journal page shows each entry's return against QQQ, its alpha and beta, the record of calls and the my-money view, in plain words and with no buy or sell language (ground rule 7) (ADR 0028)
+- [ ] One `events` table for every source (`source`, `event_type`, `ticker`, `link_confidence`, `published_at`, `first_seen_at`, `known_at`, `payload_ref`); SEC alerts read from it, and alerts and base rates are the same before and after the move
+- [ ] Raw payloads stored in S3 unchanged, partitioned by source and date, never overwritten; news batched hourly; XBRL stored only when its content changes
+- [ ] Daily digest to Slack each morning after the US close, sent even on quiet days, with poll and event counts
+- [ ] A large-cap base-rate scope beside `market` and `sic2`, so an alert on a large company shows a large-cap base rate (open question: cut by market value or by traded value)
+- [ ] News from Finnhub and GlobeNewswire into `events`: SimHash dedupe across sources, `known_at`, ticker linking as its own step with a confidence; one story from several sources alerts once
+- [ ] Rules-based sentiment v1 (carried over from the prototype) as a versioned derived layer that can be recomputed from the raw payloads
+- [ ] News base rates in the market, industry and large-cap scopes, shown with their sample size
+- [ ] A check that market-wide bars are stored every trading day, so history grows past the price plan's two-year window
 
-Next after M4 is the optional **AWS stage 2** (see `docs/PRD.md`).
+Not in M5: cross-sectional scoring or portfolio backtests, paid consensus estimates, point-in-time index membership, and FinBERT (it stays in the prototype). AWS stage 2 stays optional and unscheduled.
+
+### M4, journal: done
+
+All five boxes were ticked on 28 Nov 2026: the decision ledger (ADR 0025), the Journal page and "Log a decision" on Alert detail, scores against QQQ and SPY (ADR 0026), alpha and beta (ADR 0027), and the Journal page's record of calls and my-money view (ADR 0028).
 
 ### M3, explain: done
 
@@ -41,7 +48,7 @@ GitHub Actions ──push──► ECR ──pull──► EC2 (Docker Compose: 
                                      S3 (filing archive, DB backups) ◄─┘
 ```
 
-Stage 2 (RDS, ECS Fargate, S3 + CloudFront) is optional and comes after M4. Don't add a NAT gateway or load balancer in stage 1: they dominate cost at this size.
+Stage 2 (RDS, ECS Fargate, S3 + CloudFront) is optional and not scheduled. Don't add a NAT gateway or load balancer in stage 1: they dominate cost at this size.
 
 ## Target repo layout
 
@@ -69,7 +76,7 @@ The private prototype (`sentinelstream-prototype`) has working code. **Copy and 
 
 | Carry over | Leave in the prototype |
 | --- | --- |
-| Ingestion: SEC EDGAR client, Massive bars, Finnhub (later) | AI market brief / Market Pulse |
+| Ingestion: SEC EDGAR client, Massive bars, Finnhub (M5) | AI market brief / Market Pulse |
 | Raw → normalised boundary, lineage, idempotent upserts | Topics, Research browser, financial dictionary |
 | Scheduler, `task_runs`, advisory locks, dispatch, run reconciliation | Holdings and the RLS unlock flow |
 | Rate limiting, retries with backoff, `Retry-After` handling | Two-pass event LLM pipeline |
